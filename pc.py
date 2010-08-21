@@ -7,10 +7,11 @@ Design goals:
   * Easy to construct pipelines with I/O redirections
   * Use short names for easy typing
 
-Tests require /bin/sh to pass.
+In effect, make python usable as a system shell.
+
+Doctests require /bin/sh to pass.
 """
 
-# TODO: I/O redirection
 # TODO: remove subprocess dependency, as it doesn't support full I/O redirection.
 # 	* can only send stderr to stdout
 # 	* dup(3)'ping anything is not supported out of the box
@@ -54,6 +55,9 @@ class Cmd(object):
     
     >>> Cmd("/bin/sh -c 'echo foo'")
     Cmd(['/bin/sh', '-c', 'echo foo'], cd=None, e={}, fd={0: '<stdin>', 1: '<stdout>', 2: '<stderr>'})
+    
+    >>> Cmd(['sh', '-c', 'echo -n foo; echo -n bar >&2'], fd={2: 1}).capture(1)
+    'foobar'
     """
     if isinstance(cmd, basestring):
       self.cmd = shlex.split(cmd)
@@ -70,10 +74,14 @@ class Cmd(object):
     for k, v in fd.iteritems():
       if isinstance(v, basestring):
         self.fd[k] = open(v, 'r' if k == 0 else ('w' if k in (1, 2) else 'r+'))
+      elif k == 2 and v == 1:
+        self.fd[k] = subprocess.STDOUT
    
   def __repr__(self):
     return "Cmd(%s, cd=%s, e=%s, fd=%s)" % tuple(map(repr,
-    	[self.cmd, self.cd, self.e, dict((k, v.name) for k, v in self.fd.iteritems())]
+    	[self.cmd, self.cd, self.e, dict(
+    			(k, v.name if isinstance(v, file) else v) for k, v in self.fd.iteritems()
+    		)]
     ))
   
   def run(self):
@@ -119,7 +127,7 @@ class Cmd(object):
     >>> Cmd("sh -c 'echo -n bar >&2'").capture(2)
     'bar'
     
-    >>> Cmd("sh -c 'echo -n foo; echo -n  bar >&2'").capture(1, 2)
+    >>> Cmd("sh -c 'echo -n foo; echo -n bar >&2'").capture(1, 2)
     Capture(out='foo', err='bar')
     """
     if isinstance(fd, int):
@@ -127,12 +135,12 @@ class Cmd(object):
     else:
       fd = set(fd) or set([1])
     if not fd <= set([1, 2]):
-      raise ValueError("can only capture fd 1, 2, or both")
+      raise ValueError("can only capture fd 1, 2, or both, but no other")
     arg = dict(args=self.cmd, cwd=self.cd, env=self.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     if 1 not in fd:
-    	del arg['stdout']
+    	arg['stdout'] = self.fd[1]
     if 2 not in fd:
-    	del arg['stderr']
+    	arg['stderr'] = self.fd[2]
     p = subprocess.Popen(**arg)
     ### TODO: rewrite to just return the file objects, there maybe lots of data ...
     out, err = p.communicate()
