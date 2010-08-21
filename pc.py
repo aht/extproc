@@ -1,15 +1,19 @@
 #!/usr/bin/env python
 """
+fork-exec and pipe with I/O redirection
+
 http://www.scsh.net/docu/html/man.html
 http://golang.org/pkg/os/#ForkExec
 
 Design goals:
-  * Easy to construct pipelines with I/O redirections
-  * Use short names for easy typing
+  * Easy to fork-exec, capturing child's stdout/stderr or reuse parent's
+  * Easy to construct pipelines
+  * Easy to express I/O redirections
+  * Easy to type
 
-In effect, make python usable as a system shell.
+In effect, make Python more usable as a system shell.
 
-Doctests require /bin/sh to pass.
+Doctests require /bin/sh to pass. Tested on Linux.
 """
 
 # TODO: remove subprocess dependency, as it doesn't support full I/O redirection.
@@ -38,7 +42,7 @@ Capture = collections.namedtuple("Capture", "out err")
 class Cmd(object):
   def __init__(self, cmd, fd={}, e={}, cd=None):
     """
-    Prepare for a fork exec of 'cmd' with information about changing
+    Prepare for a fork-exec of 'cmd' with information about changing
     of working directory, extra environment variables and I/O
     redirections if necessary.
     
@@ -181,8 +185,8 @@ def run(*args, **kwargs):
 
 def capture(*args, **kwargs):
   """
-  capture("sh -c 'echo foo bar'")
-  'foo bar'
+  capture(['sh', '-c', 'echo foo; echo bar >&2'], {2: 1})
+  'foo\nbar\n'
   """
   return Cmd(*args, **kwargs).capture()
 
