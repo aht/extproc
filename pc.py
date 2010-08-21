@@ -4,6 +4,7 @@ fork-exec and pipe with I/O redirection
 
 http://www.scsh.net/docu/html/man.html
 http://golang.org/pkg/os/#ForkExec
+http://golang.org/src/pkg/syscall/exec_unix.go?h=forkAndExecInChild#L91
 
 Design goals:
   * Easy to fork-exec, capturing child's stdout/stderr or reuse parent's
@@ -13,8 +14,13 @@ Design goals:
 
 In effect, make Python more usable as a system shell.
 
+The main interpreter process had better be a single thread, since
+forking multithreaded programs is not well understood by mortals.
+
 Doctests require /bin/sh to pass. Tested on Linux.
 """
+
+from __future__ import print_function
 
 import collections, os, shlex, StringIO, subprocess, sys, tempfile
 
@@ -34,7 +40,7 @@ class NonZeroExit(Exception):
     return "child exited with status %s" % (self.exit_status)
 
 
-Capture = collections.namedtuple("Capture", "out err")
+Capture = collections.namedtuple("Capture", "stdout stderr")
 
 
 class Cmd(object):
@@ -110,11 +116,13 @@ class Cmd(object):
     Run the Cmd and wait for its termination, capturing child's
     stdout, stderr accordingly:
     
-        * capture(0) returns the child's stdout byte string
-        * capture(1) returns the child's stderr byte string
+        * capture(0) returns the child's stdout file object
+        * capture(1) returns the child's stderr file object
         * capture(0, 1) returns a named tuple of both
     
     When capture()'ing, the 'fd' parameter takes precedence over 'self.fd'.
+
+    Don't forget to close the file objects!
     
     Raise NonZeroExit if the child's exit status != 0.
     The error object contains 'out' and/or 'err' attributes that were
@@ -144,19 +152,25 @@ class Cmd(object):
     if 2 not in fd:
     	arg['stderr'] = self.fd[2]
     p = subprocess.Popen(**arg)
-    ### TODO: rewrite to just return the file objects, there maybe lots of data ...
-    out, err = p.communicate()
-    if p.returncode != 0:
-      ex = NonZeroExit(n)
-      if 1 in fd: ex.out = out
-      if 2 in fd: ex.err = err
-      raise ex
+    if p.stdin:
+      p.stdin.close()
+    if p.wait() != 0:
+      ex = NonZeroExit(p.returncode)
+      if 1 in fd: ex.stdout = p.stdout
+      if 2 in fd: ex.stderr = p.stderr
+      try:
+        raise ex
+      finally:
+        if p.stdout: p.stdout.close()
+        if p.stderr: p.stderr.close()
     if len(fd) == 1:
       if 1 in fd:
-        return out
+        if p.stderr: p.stderr.close()
+        return p.stdout
       else:
-        return err
-    return Capture(out, err)
+        if p.stdout: p.stdout.close()
+        return p.stderr
+    return Capture(p.stdout, p.stderr)
 
 
 class Pipe(Cmd):
@@ -167,6 +181,7 @@ class Pipe(Cmd):
     self.env.update(self.e)
     for c in cmd[:-1]:
       c.fd[1] = PIPE
+    self.fd = {0: cmd[0].fd[0], 1: cmd[-1].fd[1], 2: sys.stderr}
     self.cmd = cmd
   
   def __repr__(self):

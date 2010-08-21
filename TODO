@@ -1,6 +1,6 @@
-support full I/O redirection
-	* subprocess can only send stderr to stdout
-	* subprocess cannot dup(3)'ping anything out of the box
 support {fd: CLOSE} in Pipe
-support make here("string") work
-
+make here("string") work
+support full I/O redirection
+  * subprocess can send stderr to stdout but not vice versa
+  * subprocess does not dup(3) higher fd out of the box in fork-exec,
+  fortunately this won't have any effect unless the child use fdopen(3).
