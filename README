@@ -27,19 +27,15 @@ run(), spawn() and capture()
 
 Cmd object hold fork-exec info and can be run(), spawn()'ed or capture()'d.
 
-.
-
-Cmd.run() performs a fork-exec-wait in the shell, e.g.
+Cmd.run() performs a fork-exec-wait, e.g.
 
     >>> Cmd('dmesg').run()
 
-This is equivalent to:
+which is equivalent to a "normal" shell command:
 
     $ dmesg
 
 run(*) is a shorthand for Cmd(*).run()
-
-.
 
 spawn() performs an fork-exec (asynchronous), e.g.
 
@@ -49,17 +45,15 @@ This is equivalent to shell's ampersand:
 
     $ gvim -f &
 
-.
+captured() is like run() but could return a subset of the child's
+[stdout, stdin] as file object(s), e.g.
 
-captured() is like run() but could return a subset of the child
-[stdout, stdin] as a file object, e.g.
-
-    >>> cout = Cmd(['sh', '-c', 'echo -n foo']).capture(1).read()
-    >>> cin = Cmd(['sh', '-c', 'echo -n foo >&2']).capture(2).read()
-    >>> cin, cout = Cmd(['sh', '-c', 'echo -n foo; echo -n bar >&2']).capture(1, 2)
+    >>> cout = Cmd(['/bin/sh', '-c', 'echo -n foo']).capture(1).read()
+    >>> cin = Cmd(['/bin/sh', '-c', 'echo -n foo >&2']).capture(2).read()
+    >>> cin, cout = Cmd(['/bin/sh', '-c', 'echo -n foo; echo -n bar >&2']).capture(1, 2)
 
 This is equivalent to shell backquotes aka command substitution (which
-can't capture stderr):
+cannot capture stderr):
 
     $ cout=`echo -n foo; echo -n bar >&2`
     $ cout=$(echo -n foo; echo -n bar >&2)
@@ -73,18 +67,22 @@ I/O redirection
 I/O redirection are performed by specifying a dict mapping file
 descriptors to either open files, strings, or other file descriptors.
 
-    >>> Cmd(['sh', '-c', 'echo -n foo; echo -n bar >&2'], fd={2: 1}).capture(1).read()
+    >>> Cmd(['/bin/sh', '-c', 'echo -n foo; echo -n bar >&2'], fd={2: 1}).capture(1).read()
 
 or more succintly,
 
-    >>> cmdout('sh-c "echo -n foo; echo -n bar >&2"', {2: 1})
+    >>> run('/bin/sh-c "echo -n foo; echo -n bar >&2"', {2: 1})
+
+You can pass in an open file as well,
+
+    >>> run('/bin/sh -c "echo -n foo; echo -n bar"', {1: open('abc', 'w')})
 
 os.devnull (which is a string) works
 
-    >>> cmdout('sh-c "bogus comand"', {1: os.devnull, 2: os.devnull})
+    >>> run('/bin/sh -c "echo bogus stuff"', {1: os.devnull})
 
 In fact you can pass in the SILIENCE constant, which is a dict where
-everything goes straight to hell, hmm...  I meant /dev/null.
+everything goes straight to hell, hmm... I mean /dev/null.
 
 Pipe
 ----
@@ -97,6 +95,8 @@ Pipe are constructed by a list of Cmd's. Pipe can also be run(), spawn()'ed or c
 
 
 My mind is a bit blank right now, more example later ...
+
+See docstrings and doctests.
     
 
 REFERENCE
