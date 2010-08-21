@@ -1,0 +1,18 @@
+fork-exec and pipe with I/O redirection
+
+http://www.scsh.net/docu/html/man.html
+http://golang.org/pkg/os/#ForkExec
+http://golang.org/src/pkg/syscall/exec_unix.go?h=forkAndExecInChild#L91
+
+Design goals:
+  * Easy to fork-exec, capturing child's stdout/stderr or reuse parent's
+  * Easy to construct pipelines
+  * Easy to express I/O redirections
+  * Easy to type
+
+In effect, make Python more usable as a system shell.
+
+The main interpreter process had better be a single thread, since
+forking multithreaded programs is not well understood by mortals.
+
+Doctests require /bin/sh to pass. Tested on Linux.
