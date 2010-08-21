@@ -10,7 +10,10 @@ Design goals:
 Tests require /bin/sh to pass.
 """
 
-### TODO: I/O redirection
+# TODO: I/O redirection
+# TODO: remove subprocess dependency, as it doesn't support full I/O redirection.
+# 	* can only send stderr to stdout
+# 	* dup(3)'ping anything must use a different "framework"
 
 
 import collections, os, shlex, StringIO, subprocess, sys, tempfile
@@ -79,7 +82,7 @@ class Cmd(object):
     
     Return the child's exit status.
     
-    >>> Cmd('/bin/sh', '-c', 'exit 1']).run()
+    >>> Cmd(['/bin/sh', '-c', 'exit 1']).run()
     1
     """
     return subprocess.call(self.cmd, cwd=self.cd, env=self.env, stdin=self.fd[0], stdout=self.fd[1], stderr=self.fd[2])
@@ -90,9 +93,7 @@ class Cmd(object):
     
     Return a subprocess.Popen object.
     """
-    return subprocess.Popen(self.cmd, cwd=self.cd, env=self.env,
-    	stdin=self.fd[0], stdout=self.fd[1], stderr=self.fd[2]
-    )
+    return subprocess.Popen(self.cmd, cwd=self.cd, env=self.env, stdin=self.fd[0], stdout=self.fd[1], stderr=self.fd[2])
   
   def capture(self, *fd):
     """
@@ -161,7 +162,6 @@ def here(doc):
   """
   f = tempfile.TemporaryFile()
   f.write(doc)
-  f.flush()
   f.seek(0)
   return f
 
@@ -178,6 +178,15 @@ def capture(*args, **kwargs):
   'foo bar'
   """
   return Cmd(*args, **kwargs).capture()
+
+def spawn(*args, **kwargs):
+  return Cmd(*args, **kwargs).spawn()
+
+
+def __test():
+  """
+  """
+  pass
 
 
 if __name__ == '__main__':
