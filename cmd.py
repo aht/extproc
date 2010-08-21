@@ -4,10 +4,14 @@ http://www.scsh.net/docu/html/man.html
 http://golang.org/pkg/os/#ForkExec
 
 Design goals:
+  * Easy to construct pipelines with I/O redirections
   * Use short names for easy typing
-  * Easy to construct linear/non-linear pipelines
 
+Tests require /bin/sh to pass.
 """
+
+### TODO: I/O redirection
+
 
 import collections, os, shlex, StringIO, subprocess, sys, tempfile
 
@@ -28,17 +32,22 @@ Capture = collections.namedtuple("Capture", "out err")
 
 
 class Cmd(object):
-  def __init__(self, cmd, cd=None, e={}, fd=DEFAULT_FD):
+  def __init__(self, cmd, fd={}, e={}, cd=None):
     """
     Prepare for a fork exec of 'cmd' with information about changing
     of working directory, extra environment variables and I/O
     redirections if necessary.
     
-    The constructor only saves this information in the object and does
-    not actually execute anything.
+    Parameter 'cmd' should be a list, just like in subprocess.Popen().
+    If it is a string, it is passed to shlex.split().
     
-    If fd[k] is a string, it will be open()'ed with mode 'rw'.
-    It's best to open them yourself to control the mode.
+    Parameter 'e' should be a dict of *extra* enviroment variables.
+    
+    If fd[k] is a string, it will be open()'ed with mode 'r+'.
+    It's best that the client pass in opened the files.
+    
+    The constructor only saves information in the object and does
+    not actually execute anything.
     
     >>> Cmd("/bin/sh -c 'echo foo'")
     Cmd(['/bin/sh', '-c', 'echo foo'], cd=None, e={}, fd={0: '<stdin>', 1: '<stdout>', 2: '<stderr>'})
@@ -53,11 +62,11 @@ class Cmd(object):
     self.e = e
     self.env = os.environ.copy()
     self.env.update(e)
-    self.fd = collections.defaultdict(lambda: None)
+    self.fd = DEFAULT_FD.copy()
     self.fd.update(fd)
     for k, v in fd.iteritems():
       if isinstance(v, basestring):
-        self.fd[k] = open(v, 'r' if k == 0 else ('w' if k in (1, 2) else 'rw'))
+        self.fd[k] = open(v, 'r' if k == 0 else ('w' if k in (1, 2) else 'r+'))
    
   def __repr__(self):
     return "Cmd(%s, cd=%s, e=%s, fd=%s)" % tuple(map(repr,
@@ -70,7 +79,7 @@ class Cmd(object):
     
     Return the child's exit status.
     
-    >>> Cmd('sh -c "exit 1"').run()
+    >>> Cmd('/bin/sh', '-c', 'exit 1']).run()
     1
     """
     return subprocess.call(self.cmd, cwd=self.cd, env=self.env, stdin=self.fd[0], stdout=self.fd[1], stderr=self.fd[2])
@@ -105,6 +114,9 @@ class Cmd(object):
     'foo'
     
     >>> Cmd("sh -c 'echo -n bar >&2'").capture(2)
+    'bar'
+    
+    >>> Cmd("sh -c 'echo -n bar >&2'", fd={2: 1}).capture(1)
     'bar'
     
     >>> Cmd("sh -c 'echo -n foo; echo -n  bar >&2'").capture(1, 2)
