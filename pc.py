@@ -21,7 +21,10 @@ import collections, os, shlex, StringIO, subprocess, sys, tempfile
 DEFAULT_FD = {0: sys.stdin, 1: sys.stdout, 2: sys.stderr}
 SILENCE = {0: os.devnull, 1: os.devnull, 2: os.devnull}
 PIPE = subprocess.PIPE
-CLOSE = -1
+assert PIPE == -1
+STDOUT = subprocess.STDOUT
+assert STDOUT == -2
+CLOSE = -3
 
 
 class NonZeroExit(Exception):
@@ -76,7 +79,7 @@ class Cmd(object):
       if isinstance(v, basestring):
         self.fd[k] = open(v, 'r' if k == 0 else ('w' if k in (1, 2) else 'r+'))
       elif k == 2 and v == 1:
-        self.fd[k] = subprocess.STDOUT
+        self.fd[k] = STDOUT
    
   def __repr__(self):
     return "Cmd(%s, cd=%s, e=%s, fd=%s)" % (self.cmd, self.cd, self.e, dict(
@@ -135,7 +138,7 @@ class Cmd(object):
       fd = set(fd) or set([1])
     if not fd <= set([1, 2]):
       raise ValueError("can only capture fd 1, 2, or both, but no other")
-    arg = dict(args=self.cmd, cwd=self.cd, env=self.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    arg = dict(args=self.cmd, cwd=self.cd, env=self.env, stdout=PIPE, stderr=PIPE)
     if 1 not in fd:
     	arg['stdout'] = self.fd[1]
     if 2 not in fd:
@@ -162,24 +165,21 @@ class Pipe(Cmd):
     self.e = kwargs.get('e', {})
     self.env = os.environ.copy()
     self.env.update(self.e)
-    self.fd = DEFAULT_FD.copy()
-    self.fd.update(kwargs.get('fd', {}))
-    for k, v in self.fd.iteritems():
-      if not isinstance(k, int):
-        raise TypeError("fd keys must have type int")
-      if isinstance(v, basestring):
-        self.fd[k] = open(v, 'r' if k == 0 else ('w' if k in (1, 2) else 'r+'))
-      elif k == 2 and v == 1:
-        self.fd[k] = subprocess.STDOUT
     for c in cmd[:-1]:
-      c.fd[1] = subprocess.PIPE
+      c.fd[1] = PIPE
     self.cmd = cmd
   
   def __repr__(self):
-    return "Pipe(%s, cd=%s, e=%s, fd=%s)" % (
-    	", ".join("Cmd(%s)" % c.cmd for c in self.cmd), self.cd, self.e, dict(
-    			(k, v.name if isinstance(v, file) else v) for k, v in self.fd.iteritems()
-    		))
+    return "Pipe(%s, cd=%s, e=%s)" % (
+    	", ".join("Cmd(%s)" % c.cmd for c in self.cmd), self.cd, self.e
+    )
+  
+  def run(self):
+    prev = self.cmd[0].fd[0]
+    for c in self.cmd:
+      c.p = subprocess.Popen(c.cmd, stdin=prev, stdout=c.fd[1], stderr=c.fd[2], cwd=c.cd, env=c.env)
+      prev = c.p.stdout
+    return self.cmd[-1].p.wait()
 
 
 def here(string):
