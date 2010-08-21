@@ -1,6 +1,6 @@
 support full I/O redirection
 	* subprocess can only send stderr to stdout
 	* subprocess cannot dup(3)'ping anything out of the box
-support {fd: CLOSE} in pipe
+support {fd: CLOSE} in Pipe
 support make here("string") work
 

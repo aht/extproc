@@ -79,11 +79,9 @@ class Cmd(object):
         self.fd[k] = subprocess.STDOUT
    
   def __repr__(self):
-    return "Cmd(%s, cd=%s, e=%s, fd=%s)" % tuple(map(repr,
-    	[self.cmd, self.cd, self.e, dict(
+    return "Cmd(%s, cd=%s, e=%s, fd=%s)" % (self.cmd, self.cd, self.e, dict(
     			(k, v.name if isinstance(v, file) else v) for k, v in self.fd.iteritems()
-    		)]
-    ))
+    		))
   
   def run(self):
     """
@@ -158,9 +156,30 @@ class Cmd(object):
     return Capture(out, err)
 
 
-class Chain(Cmd):
-  def __init__(self, fd=[], cd='', env={}, *cmd):
-    pass
+class Pipe(Cmd):
+  def __init__(self, *cmd, **kwargs):
+    self.cd = kwargs.get('cd')
+    self.e = kwargs.get('e', {})
+    self.env = os.environ.copy()
+    self.env.update(self.e)
+    self.fd = DEFAULT_FD.copy()
+    self.fd.update(kwargs.get('fd', {}))
+    for k, v in self.fd.iteritems():
+      if not isinstance(k, int):
+        raise TypeError("fd keys must have type int")
+      if isinstance(v, basestring):
+        self.fd[k] = open(v, 'r' if k == 0 else ('w' if k in (1, 2) else 'r+'))
+      elif k == 2 and v == 1:
+        self.fd[k] = subprocess.STDOUT
+    for c in cmd[:-1]:
+      c.fd[1] = subprocess.PIPE
+    self.cmd = cmd
+  
+  def __repr__(self):
+    return "Pipe(%s, cd=%s, e=%s, fd=%s)" % (
+    	", ".join("Cmd(%s)" % c.cmd for c in self.cmd), self.cd, self.e, dict(
+    			(k, v.name if isinstance(v, file) else v) for k, v in self.fd.iteritems()
+    		))
 
 
 def here(string):
