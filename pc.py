@@ -13,7 +13,7 @@ Tests require /bin/sh to pass.
 # TODO: I/O redirection
 # TODO: remove subprocess dependency, as it doesn't support full I/O redirection.
 # 	* can only send stderr to stdout
-# 	* dup(3)'ping anything must use a different "framework"
+# 	* dup(3)'ping anything is not supported out of the box
 
 
 import collections, os, shlex, StringIO, subprocess, sys, tempfile
@@ -104,9 +104,11 @@ class Cmd(object):
         * capture(1) returns the child's stderr byte string
         * capture(0, 1) returns a named tuple of both
     
-    When capture()'ing, the 'fd' parameter take precedence over 'self.fd'.
+    When capture()'ing, the 'fd' parameter takes precedence over 'self.fd'.
     
     Raise NonZeroExit if the child's exit status != 0.
+    The error object contains 'out' and/or 'err' attributes that were
+    captured from the child before it terminates.
     
     >>> Cmd("sh -c 'echo -n foo'").capture()
     'foo'
@@ -115,9 +117,6 @@ class Cmd(object):
     'foo'
     
     >>> Cmd("sh -c 'echo -n bar >&2'").capture(2)
-    'bar'
-    
-    >>> Cmd("sh -c 'echo -n bar >&2'", fd={2: 1}).capture(1)
     'bar'
     
     >>> Cmd("sh -c 'echo -n foo; echo -n  bar >&2'").capture(1, 2)
@@ -135,18 +134,18 @@ class Cmd(object):
     if 2 not in fd:
     	del arg['stderr']
     p = subprocess.Popen(**arg)
-    ## TODO: rewrite to just return the file objects, there maybe lots of data ...
-    ## plus, there will be a blocked thread read()'ing on either
-    ## the child's stdout or stderr if nothing comes out of it :(
+    ### TODO: rewrite to just return the file objects, there maybe lots of data ...
     out, err = p.communicate()
     if p.returncode != 0:
       ex = NonZeroExit(n)
-      if arg.has_key('stdout'): ex.out = out
-      if arg.has_key('stderr'): ex.err = err
+      if 1 in fd: ex.out = out
+      if 2 in fd: ex.err = err
       raise ex
     if len(fd) == 1:
-      if arg.has_key('stdout'): return out
-      if arg.has_key('stderr'): return err
+      if 1 in fd:
+        return out
+      else:
+        return err
     return Capture(out, err)
 
 
