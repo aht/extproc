@@ -19,6 +19,7 @@ Doctests require /bin/sh to pass. Tested on Linux.
 # TODO: remove subprocess dependency, as it doesn't support full I/O redirection.
 # 	* can only send stderr to stdout
 # 	* dup(3)'ping anything is not supported out of the box
+# TODO: support {fd: CLOSE}
 
 
 import collections, os, shlex, StringIO, subprocess, sys, tempfile
@@ -76,6 +77,8 @@ class Cmd(object):
     self.fd = DEFAULT_FD.copy()
     self.fd.update(fd)
     for k, v in fd.iteritems():
+      if not isinstance(k, int):
+        raise ValueError("fd keys must have type int")
       if isinstance(v, basestring):
         self.fd[k] = open(v, 'r' if k == 0 else ('w' if k in (1, 2) else 'r+'))
       elif k == 2 and v == 1:
