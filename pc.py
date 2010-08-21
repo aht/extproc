@@ -20,8 +20,6 @@ forking multithreaded programs is not well understood by mortals.
 Doctests require /bin/sh to pass. Tested on Linux.
 """
 
-from __future__ import print_function
-
 import collections, os, shlex, StringIO, subprocess, sys, tempfile
 
 DEFAULT_FD = {0: sys.stdin, 1: sys.stdout, 2: sys.stderr}
@@ -145,7 +143,7 @@ class Cmd(object):
     else:
       fd = set(fd) or set([1])
     if not fd <= set([1, 2]):
-      raise ValueError("can only capture fd 1, 2, or both, but no other")
+      raise ValueError("can only capture a subset of fd [1, 2] for now")
     arg = dict(args=self.cmd, cwd=self.cd, env=self.env, stdout=PIPE, stderr=PIPE)
     if 1 not in fd:
     	arg['stdout'] = self.fd[1]
@@ -173,12 +171,11 @@ class Cmd(object):
     return Capture(p.stdout, p.stderr)
 
 
-class Pipe(Cmd):
-  def __init__(self, *cmd, **kwargs):
-    self.cd = kwargs.get('cd')
-    self.e = kwargs.get('e', {})
-    self.env = os.environ.copy()
-    self.env.update(self.e)
+class Pipe(object):
+  def __init__(self, *cmd):
+    """
+    Prepare a pipeline from a list of Cmd's.
+    """
     for c in cmd[:-1]:
       c.fd[1] = PIPE
     self.fd = {0: cmd[0].fd[0], 1: cmd[-1].fd[1], 2: sys.stderr}
@@ -190,11 +187,54 @@ class Pipe(Cmd):
     )
   
   def run(self):
+    """
+    Run the pipeline and waits for its termination.
+    
+    Return the last child's exit status.
+    """
     prev = self.cmd[0].fd[0]
     for c in self.cmd:
       c.p = subprocess.Popen(c.cmd, stdin=prev, stdout=c.fd[1], stderr=c.fd[2], cwd=c.cd, env=c.env)
       prev = c.p.stdout
     return self.cmd[-1].p.wait()
+  
+  def spawn(self):
+    """
+    Run the pipeline but do not wait for its termination.
+    
+    Return a subprocess.Popen object.
+    """
+    raise NotImplementedError()
+  
+  def capture(self, *fd):
+    if isinstance(fd, int):
+      fd = set([fd])
+    else:
+      fd = set(fd) or set([1])
+    if not fd <= set([1]):
+      raise ValueError("can only capture fd 1 for now")
+    prev = self.cmd[0].fd[0]
+    for c in self.cmd[:-1]:
+      c.p = subprocess.Popen(c.cmd, stdin=prev, stdout=c.fd[1], stderr=c.fd[2], cwd=c.cd, env=c.env)
+      prev = c.p.stdout
+    c = self.cmd[-1]
+    if 1 in fd:
+      c.p = subprocess.Popen(c.cmd, stdin=prev, stdout=PIPE, stderr=c.fd[2], cwd=c.cd, env=c.env)
+    else:
+      c.p = subprocess.Popen(c.cmd, stdin=prev, stdout=c.fd[1], stderr=c.fd[2], cwd=c.cd, env=c.env)
+    if c.p.wait() != 0:
+      ex = NonZeroExit(c.p.returncode)
+      if 1 in fd: ex.stdout = c.p.stdout
+      try:
+        raise ex
+      finally:
+        if c.p.stdout: c.p.stdout.close()
+        if c.p.stderr: c.p.stderr.close()
+    if len(fd) == 1:
+      if 1 in fd:
+        if c.p.stderr: c.p.stderr.close()
+        return c.p.stdout
+    return Capture(c.p.stdout, StringIO.StringIO())
 
 
 def here(string):
@@ -214,12 +254,30 @@ def run(*args, **kwargs):
   """
   return Cmd(*args, **kwargs).run()
 
-def capture(*args, **kwargs):
+def cmdout(*args, **kwargs):
   """
-  >>> capture(['sh', '-c', 'echo -n foo; echo -n bar >&2'], {2: 1})
+  Run the Cmd with its arguments, then returns its stdout as a byte string.
+  
+  >>> cmdout(['sh', '-c', 'echo -n foo; echo -n bar >&2'], {2: 1})
   'foobar'
   """
-  return Cmd(*args, **kwargs).capture()
+  f = Cmd(*args, **kwargs).capture(1)
+  try:
+    s = f.read()
+  finally:
+    f.close()
+  return s
+
+def pipeout(*args):
+  """
+  Run the pipeline with given Cmd's, then returns its stdout as a byte string.
+  """
+  f = Pipe(*args).capture(1)
+  try:
+    s = f.read()
+  finally:
+    f.close()
+  return s
 
 def spawn(*args, **kwargs):
   return Cmd(*args, **kwargs).spawn()
