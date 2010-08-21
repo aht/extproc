@@ -62,7 +62,7 @@ class Cmd(object):
     >>> Cmd("/bin/sh -c 'echo foo'")
     Cmd(['/bin/sh', '-c', 'echo foo'], cd=None, e={}, fd={0: '<stdin>', 1: '<stdout>', 2: '<stderr>'})
     
-    >>> Cmd(['sh', '-c', 'echo -n foo; echo -n bar >&2'], fd={2: 1}).capture(1)
+    >>> Cmd(['/bin/sh', '-c', 'echo -n foo; echo -n bar >&2'], fd={2: 1}).capture(1).read()
     'foobar'
     """
     if isinstance(cmd, basestring):
@@ -82,8 +82,10 @@ class Cmd(object):
         raise TypeError("fd keys must have type int")
       if isinstance(v, basestring):
         self.fd[k] = open(v, 'r' if k == 0 else ('w' if k in (1, 2) else 'r+'))
-      elif k == 2 and v == 1:
-        self.fd[k] = STDOUT
+      elif isinstance(v, int):
+        # self.fd[k] = os.fdopen(v, 'r' if k == 0 else ('w' if k in (1, 2) else 'r+'))
+        if k == 2 and v == 1:
+          self.fd[k] = STDOUT
    
   def __repr__(self):
     return "Cmd(%s, cd=%s, e=%s, fd=%s)" % (self.cmd, self.cd, self.e, dict(
@@ -92,7 +94,7 @@ class Cmd(object):
   
   def run(self):
     """
-    Run the Cmd and waits for its termination.
+    Fork-exec the Cmd and waits for its termination.
     
     Return the child's exit status.
     
@@ -103,7 +105,7 @@ class Cmd(object):
   
   def spawn(self):
     """
-    Run the Cmd but do not wait for its termination.
+    Fork-exec the Cmd but do not wait for its termination.
     
     Return a subprocess.Popen object.
     """
@@ -111,7 +113,7 @@ class Cmd(object):
   
   def capture(self, *fd):
     """
-    Run the Cmd and wait for its termination, capturing child's
+    Fork-exec the Cmd and wait for its termination, capturing child's
     stdout, stderr accordingly:
     
         * capture(0) returns the child's stdout file object
@@ -126,17 +128,20 @@ class Cmd(object):
     The error object contains 'out' and/or 'err' attributes that were
     captured from the child before it terminates.
     
-    >>> Cmd("sh -c 'echo -n foo'").capture()
+    >>> Cmd("sh -c 'echo -n foo'").capture().read()
     'foo'
    
-    >>> Cmd("sh -c 'echo -n foo'").capture(1)
+    >>> Cmd("sh -c 'echo -n foo'").capture(1).read()
     'foo'
     
-    >>> Cmd("sh -c 'echo -n bar >&2'").capture(2)
+    >>> Cmd("sh -c 'echo -n bar >&2'").capture(2).read()
     'bar'
     
-    >>> Cmd("sh -c 'echo -n foo; echo -n bar >&2'").capture(1, 2)
-    Capture(out='foo', err='bar')
+    >>> cout, cerr = Cmd("sh -c 'echo -n foo; echo -n bar >&2'").capture(1, 2)
+    >>> cout.read()
+    'foo'
+    >>> cerr.read()
+    'bar'
     """
     if isinstance(fd, int):
       fd = set([fd])
@@ -188,7 +193,7 @@ class Pipe(object):
   
   def run(self):
     """
-    Run the pipeline and waits for its termination.
+    Fork-exec the pipeline and waits for its termination.
     
     Return the last child's exit status.
     """
@@ -200,13 +205,23 @@ class Pipe(object):
   
   def spawn(self):
     """
-    Run the pipeline but do not wait for its termination.
+    Fork-exec the pipeline but do not wait for its termination.
     
     Return a subprocess.Popen object.
     """
     raise NotImplementedError()
   
   def capture(self, *fd):
+    """
+    Fork-exec the pipeline and wait for its termination, capturing the last child's
+    stdout.
+    
+    Return the child's stdout file object. Don't forget to close it!
+    
+    Raise NonZeroExit if the child's exit status != 0.
+    The error object contains a 'stdout'  attribute that were
+    captured from the child before it terminates.
+    """
     if isinstance(fd, int):
       fd = set([fd])
     else:
@@ -258,7 +273,7 @@ def cmdout(*args, **kwargs):
   """
   Run the Cmd with its arguments, then returns its stdout as a byte string.
   
-  >>> cmdout(['sh', '-c', 'echo -n foo; echo -n bar >&2'], {2: 1})
+  >>> cmdout(['/bin/sh', '-c', 'echo -n foo; echo -n bar >&2'], {2: 1})
   'foobar'
   """
   f = Cmd(*args, **kwargs).capture(1)
