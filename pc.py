@@ -16,12 +16,6 @@ In effect, make Python more usable as a system shell.
 Doctests require /bin/sh to pass. Tested on Linux.
 """
 
-# TODO: remove subprocess dependency, as it doesn't support full I/O redirection.
-# 	* can only send stderr to stdout
-# 	* dup(3)'ping anything is not supported out of the box
-# TODO: support {fd: CLOSE}
-
-
 import collections, os, shlex, StringIO, subprocess, sys, tempfile
 
 DEFAULT_FD = {0: sys.stdin, 1: sys.stdout, 2: sys.stderr}
@@ -78,7 +72,7 @@ class Cmd(object):
     self.fd.update(fd)
     for k, v in fd.iteritems():
       if not isinstance(k, int):
-        raise ValueError("fd keys must have type int")
+        raise TypeError("fd keys must have type int")
       if isinstance(v, basestring):
         self.fd[k] = open(v, 'r' if k == 0 else ('w' if k in (1, 2) else 'r+'))
       elif k == 2 and v == 1:
@@ -169,13 +163,13 @@ class Chain(Cmd):
     pass
 
 
-def here(doc):
+def here(string):
   """
-  #>>> capture('cat', fd={0: here("foo bar")})
+  ### >>> capture('cat', {0: here("foo bar")})
   'foo bar'
   """
   f = tempfile.TemporaryFile()
-  f.write(doc)
+  f.write(string)
   f.seek(0)
   return f
 
