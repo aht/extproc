@@ -188,8 +188,8 @@ def run(*args, **kwargs):
 
 def capture(*args, **kwargs):
   """
-  capture(['sh', '-c', 'echo foo; echo bar >&2'], {2: 1})
-  'foo\nbar\n'
+  >>> capture(['sh', '-c', 'echo -n foo; echo -n bar >&2'], {2: 1})
+  'foobar'
   """
   return Cmd(*args, **kwargs).capture()
 
