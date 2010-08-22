@@ -44,12 +44,17 @@ import subprocess
 import sys
 import tempfile
 
+
 DEFAULT_FD = {0: sys.stdin, 1: sys.stdout, 2: sys.stderr}
 SILENCE = {0: os.devnull, 1: os.devnull, 2: os.devnull}
 _PIPE = subprocess.PIPE # should be -1
 _STDOUT = subprocess.STDOUT # should be -2
 CLOSE = _STDOUT - 1
 assert CLOSE not in (_PIPE, _STDOUT) # should never happen
+
+
+def is_fileno(n, f):
+  return hasattr(f, 'fileno') and f.fileno() == n
 
 
 class NonZeroExit(Exception):
@@ -112,6 +117,10 @@ class Cmd(object):
       elif isinstance(v, int):
         if k == 2 and v == 1:
           self.fd[k] = _STDOUT
+        else:
+          raise NotImplementedError("redirection {%s: %s} not supported by subprocess" % (k, v))
+      elif not (hasattr(v, 'fileno') or (v is None)):
+        raise ValueError("fd value %s is not a file, int, string or None" % (v,))
    
   def __repr__(self):
     return "Cmd(%s, cd=%s, e=%s, fd=%s)" % (self.cmd, self.cd, self.e, dict(
@@ -146,10 +155,10 @@ class Cmd(object):
         * capture(1) returns the child's stderr file object
         * capture(0, 1) returns a named tuple of both
     
-    Only the fds that reuse the parent's stdout/stderr (i.e. when you
-    had not redirected them elsewhere) will be captured.
-
     Don't forget to close the file objects!
+    
+    Note that only the fds that reuse the parent's stdout/stderr (when
+    you had not redirected them elsewhere) can be captured.
     
     Raise NonZeroExit if the child's exit status != 0.
     The error object contains 'out' and/or 'err' attributes that were
@@ -175,19 +184,18 @@ class Cmd(object):
     else:
       fd = set(fd) or set([1])
     if not fd <= set([1, 2]):
-      raise ValueError("can only capture a subset of fd [1, 2] for now")
-    arg = dict(args=self.cmd, cwd=self.cd, env=self.env, stdin=self.fd[0], stdout=_PIPE, stderr=_PIPE)
+      raise NotImplementedError("can only capture a subset of fd [1, 2] for now")
     if 1 in fd:
-      if not ((self.fd[1] is not sys.stdout) or (self.fd[1] is not None)):
-        raise ValueError("cannot capture the child's stdout, it has been redirected")
-    else:
-      arg['stdout'] = self.fd[1]
+      if is_fileno(1, self.fd[1]) or (self.fd[1] is None):
+        self.fd[1] = _PIPE
+      else:
+        raise ValueError("cannot capture the child's stdout: it had been redirected to %s" % self.fd[1])
     if 2 in fd:
-      if not ((self.fd[2] is not sys.stderr) or (self.fd[2] is not None)):
-        raise ValueError("cannot capture the child's stderr, it has been redirected")
-    else:
-      arg['stderr'] = self.fd[2]
-    p = subprocess.Popen(**arg)
+      if is_fileno(2, self.fd[2]) or (self.fd[2] is None):
+        self.fd[2] = _PIPE
+      else:
+        raise ValueError("cannot capture the child's stderr: it had been redirected to %s" % self.fd[2])
+    p = subprocess.Popen(self.cmd, cwd=self.cd, env=self.env, stdin=self.fd[0], stdout=self.fd[1], stderr=self.fd[2])
     if p.stdin:
       p.stdin.close()
     if p.wait() != 0:
@@ -217,6 +225,11 @@ class Sh(Cmd):
     Equivalent to Cmd(['/bin/sh', '-c', cmd], **kwargs).
     """
     super(Sh, self).__init__(['/bin/sh', '-c', cmd], fd=fd, e=e, cd=cd)
+  
+  def __repr__(self):
+    return "Sh(%s, cd=%s, e=%s, fd=%s)" % (repr(self.cmd[2]), self.cd, self.e, dict(
+    			(k, v.name if isinstance(v, file) else v) for k, v in self.fd.iteritems()
+    		))
 
 
 class Pipe(object):
@@ -231,20 +244,18 @@ class Pipe(object):
     Extra enviroments 'e' will be exported to all sub-commands.
     """
     self.e = kwargs.get('e', {})
-    self.env = os.environ.copy() # representational value for debug
+    self.env = os.environ.copy()
     self.env.update(self.e)
     for c in cmd:
       c.e.update(self.e)
       c.env.update(self.e)
     for c in cmd[:-1]:
       c.fd[1] = _PIPE
-    self.fd = {0: cmd[0].fd[0], 1: cmd[-1].fd[1], 2: sys.stderr} # representational value for debug
+    self.fd = {0: cmd[0].fd[0], 1: cmd[-1].fd[1], 2: sys.stderr}
     self.cmd = cmd
   
   def __repr__(self):
-    return "Pipe(%s, cd=%s, e=%s)" % (
-    	", ".join("Cmd(%s)" % c.cmd for c in self.cmd), self.cd, self.e
-    )
+    return "Pipe(%s)" % ("\n   | ".join(map(repr, self.cmd)),)
   
   def run(self):
     """
@@ -276,35 +287,58 @@ class Pipe(object):
     Raise NonZeroExit if the child's exit status != 0.
     The error object contains a 'stdout'  attribute that were
     captured from the child before it terminates.
+    
+    >>> Pipe(Sh('echo -n foo; echo -n bar >&2'), Cmd('cat')).capture().read()
+    'foo'
+  
+    >>> Pipe(Sh('echo -n foo; echo -n bar >&2'), Cmd('cat', {2: 1})).capture(2).read()
+    'bar'
     """
     if isinstance(fd, int):
       fd = set([fd])
     else:
       fd = set(fd) or set([1])
-    if not fd <= set([1]):
-      raise ValueError("can only capture fd 1 for now")
+    if not fd <= set([1, 2]):
+      raise NotImplementedError("can only capture a subset of fd [1, 2] for now")
+    if 1 in fd and not (is_fileno(1, self.fd[1]) or (self.fd[1] is None)):
+      raise ValueError("cannot capture the last child's stdout: it had been redirected to %s" % self.fd[1])
+    temp = None
+    if 2 in fd:
+      temp = tempfile.TemporaryFile()
+      self.fd[2] = temp
     prev = self.cmd[0].fd[0]
     for c in self.cmd[:-1]:
+      if 2 in fd:
+        if is_fileno(2, c.fd[2]) or (c.fd[2] is None):
+          c.fd[2] = temp
       c.p = subprocess.Popen(c.cmd, stdin=prev, stdout=c.fd[1], stderr=c.fd[2], cwd=c.cd, env=c.env)
       prev = c.p.stdout
     c = self.cmd[-1]
     if 1 in fd:
-      c.p = subprocess.Popen(c.cmd, stdin=prev, stdout=_PIPE, stderr=c.fd[2], cwd=c.cd, env=c.env)
-    else:
-      c.p = subprocess.Popen(c.cmd, stdin=prev, stdout=c.fd[1], stderr=c.fd[2], cwd=c.cd, env=c.env)
-    if c.p.wait() != 0:
+      c.fd[1] = _PIPE
+    if 2 in fd:
+      if is_fileno(2, c.fd[2]) or (c.fd[2] is None):
+        c.fd[2] = temp
+    c.p = subprocess.Popen(c.cmd, stdin=prev, stdout=c.fd[1], stderr=c.fd[2], cwd=c.cd, env=c.env)
+    c.p.wait()
+    if temp: temp.seek(0)
+    if c.p.returncode != 0:
       ex = NonZeroExit(c.p.returncode)
       if 1 in fd: ex.stdout = c.p.stdout
+      if 2 in fd: ex.stderr = temp
       try:
         raise ex
       finally:
         if c.p.stdout: c.p.stdout.close()
-        if c.p.stderr: c.p.stderr.close()
+        if temp: temp.close()
     if len(fd) == 1:
       if 1 in fd:
-        if c.p.stderr: c.p.stderr.close()
+        if temp: temp.close()
         return c.p.stdout
-    return Capture(c.p.stdout, StringIO.StringIO())
+      if 2 in fd:
+        if c.p.stdout: c.p.stdout.close()
+        return temp
+    return Capture(c.p.stdout, temp)
 
 
 def here(string):
@@ -368,8 +402,22 @@ def __test():
   >>> sh('echo -n foo; echo -n bar >&2', {2: 1})
   'foobar'
   
+  >>> sh("echo bogus stuff", {1: os.devnull}) #doctest: +ELLIPSIS
+  Traceback (most recent call last):
+  ...
+  ValueError: cannot capture ...
+  
   >>> pipe(Sh('echo -n $x'), Sh('cat; echo -n $x'), e=dict(x='foobar'))
   'foobarfoobar'
+  
+  >>> pipe(Sh("echo bogus"), Cmd("cat", {1: os.devnull})) #doctest: +ELLIPSIS
+  Traceback (most recent call last):
+  ...
+  ValueError: cannot capture ...
+  
+  ### This one is tricky
+  >>> Pipe(Sh('echo -n foo; echo -n bar >&2'), Sh('cat >&2')).capture(2).read()
+  'barfoo'
   """
   pass
 
