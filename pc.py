@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+#-*- coding: utf-8 -*-
 """
 process control: fork-exec and pipe with I/O redirection
 
@@ -122,7 +123,9 @@ class Cmd(object):
           self.fd[k] = STDOUT
         elif (v in (0, 1, 2)):
           raise NotImplementedError("redirection {%s: %s} not supported" % (k, v))
-      elif not (hasattr(v, 'fileno') or (v is CLOSE)):
+      elif v is CLOSE:
+        raise NotImplementedError("closing is not supported")
+      elif not hasattr(v, 'fileno'):
         raise ValueError("fd value %s is not a file, int, string or None" % (v,))
    
   def __repr__(self):
