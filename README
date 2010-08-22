@@ -35,7 +35,7 @@ INTRODUCTION
 run(), spawn() and capture()
 ----------------------------
 
-Cmd object hold fork-exec info and can be run(), spawn()'ed or capture()'d.
+Cmd objects hold fork-exec info and can be run(), spawn()'ed or capture()'d.
 
 Cmd.run() performs a fork-exec-wait, e.g.
 
@@ -77,7 +77,7 @@ sh(*) returns Sh(*).capture(1).read() wrapped in a try: ... finally: close() cla
 I/O redirection
 ---------------
 
-I/O redirection are performed by specifying a dict mapping file
+I/O redirections are performed by specifying a dict mapping file
 descriptors to either open files, strings, or other file descriptors.
 
     >>> Sh('echo -n foo; echo -n bar >&2', fd={2: 1}).capture(1).read()
@@ -101,7 +101,7 @@ hell, hmm...  I mean /dev/null.
 Pipe
 ----
 
-Pipe are constructed by a list of Cmd's. Pipe can also be run(), spawn()'ed or capture()'d.
+Pipe are constructed by a list of Cmd's. Pipes can also be run(), spawn()'ed or capture()'d.
 
     >>> s = Pipe(Cmd('dmesg'), Cmd('/bin/grep x')).capture(1).read()
     
