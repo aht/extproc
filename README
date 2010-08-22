@@ -12,7 +12,7 @@ In effect, make Python more usable as a system shell.
 Technically, pc.py is a layer on top of subprocess. The subprocess
 module support a rich API but is clumsy for many common use cases,
 namely sync/async fork-exec, command substitution and pipelining,
-all of which is trivial to do on system shells. [1] [2]
+all of which is trivial to do on system shells. [1][2]
 
 To my knowledge, this is powerful enough to do all things that would
 have required using subshells in /bin/sh. [3]  (The implementation
@@ -23,17 +23,18 @@ forking multithreaded programs is not well understood by mortals. [4]
 
 Doctests require /bin/sh to pass. Tested on Linux.
 
+
 [1] sh(1)
 [2] The Scheme Shell -- http://www.scsh.net/docu/html/man.html
 [4] http://tldp.org/LDP/abs/html/subshells.html
 [3] http://golang.org/src/pkg/syscall/exec_unix.go
 
 
-INTRODUCTION
-============
+Let's start forking!
+
 
 run(), spawn() and capture()
-----------------------------
+============================
 
 Cmd objects hold fork-exec info and can be run(), spawn()'ed or capture()'d.
 
@@ -41,24 +42,25 @@ Cmd.run() performs a fork-exec-wait, e.g.
 
     >>> exit_status = Cmd('dmesg').run()
 
-which is equivalent to a "normal" shell's command:
+is equivalent this "normal" shell's command:
 
     $ dmesg
 
-Sh(cmd, **kwargs) is equivalent to Cmd(['/bin/sh', '-c', cmd], **kwargs)
+Sh(cmd, **kwargs) is equivalent to Cmd(['/bin/sh', '-c', cmd], **kwargs).
 
 
-spawn() performs an fork-exec (asynchronous) and returns a subprocess.Popen object, e.g.
+Cmd.spawn() performs an fork-exec (no wait) and returns a subprocess.Popen object, e.g.
 
-    >>> subproc = Cmd(['gvim', '-f']).spawn()
+    >>> proc = Cmd(['gvim', '-f']).spawn()
 
-which is equivalent to a shell's ampersand command,
+is equivalent to this shell's ampersand command:
 
     $ gvim -f &
 
+spawn(*) is equivalent to Cmd(*).spawn(). Have fun with proc.kill() :)
 
-captured() is like run() but could return a subset of the child's
-[stdout, stdin] as file object(s), e.g.
+Cmd.captured() also performs a fork-exec-wait but returns a subset of
+the child's [stdout, stdin] as file object(s), e.g.
 
     >>> out = Sh('echo -n foo').capture(1).read()
     >>> err = Sh('echo -n foo >&2').capture(2).read()
@@ -75,14 +77,14 @@ sh(*) returns Sh(*).capture(1).read() wrapped in a try: ... finally: close() cla
 
 
 I/O redirection
----------------
+===============
 
 I/O redirections are performed by specifying a dict mapping file
-descriptors to either open files, strings, or other file descriptors.
+descriptors to either open files, strings, or other file descriptors, e.g.
 
     >>> out = Sh('echo -n foo; echo -n bar >&2', fd={2: 1}).capture(1).read()
 
-or more succintly (and safer),
+or more succintly (and safer):
 
     >>> out = sh('echo -n foo; echo -n bar >&2', {2: 1})
 
@@ -90,7 +92,7 @@ The following append the child's stdout to the file 'abc' (equiv. to 'echo foo >
 
     >>> out = sh('echo foo', {1: open('abc', 'a')})
 
-os.devnull (which is a string) also works
+os.devnull (which is a string) also works:
 
     >>> out = sh('echo bogus stuff', {1: os.devnull})
 
@@ -99,16 +101,17 @@ straight to hell, hmm...  I mean /dev/null.
 
 
 Pipe
-----
+====
 
-Pipe are constructed by a list of Cmd's. Pipes can also be run(), spawn()'ed or capture()'d.
+Pipe are constructed by a list of Cmd's. Pipes can also be run(), spawn()'ed or capture()'d, e.g.
 
     >>> exit_status = Pipe(Cmd('dmesg'), Cmd('/bin/grep x')).run()
     
     >>> out = Pipe(Cmd('dmesg'), Cmd('/bin/grep x')).capture().read()
-    >>> out = pipe(Cmd('dmesg'), Cmd('/bin/grep x'))
 
 pipe(*) returns Pipe(*).capture(1).read() wrapped in a try: ... finally: close() clause.
+
+    >>> out = pipe(Cmd('dmesg'), Cmd('/bin/grep x'))
 
 
 API REFERENCE
