@@ -34,10 +34,10 @@ Reference:
 
 """
 
+
 import collections
 import os
 import shlex
-import StringIO
 import subprocess
 import sys
 import tempfile
@@ -49,6 +49,8 @@ PIPE = subprocess.PIPE # should be -1
 STDOUT = subprocess.STDOUT # should be -2
 CLOSE = None
 assert CLOSE not in (PIPE, STDOUT) # should never happen
+
+JOBS = []
 
 
 def is_fileno(n, f):
@@ -145,9 +147,11 @@ class Cmd(object):
     """
     Fork-exec the Cmd but do not wait for its termination.
     
-    Return a subprocess.Popen object.
+    Return a subprocess.Popen object (which is also stored in 'self.p')
     """
-    return subprocess.Popen(self.cmd, cwd=self.cd, env=self.env, stdin=self.fd[0], stdout=self.fd[1], stderr=self.fd[2])
+    self.p = subprocess.Popen(self.cmd, cwd=self.cd, env=self.env, stdin=self.fd[0], stdout=self.fd[1], stderr=self.fd[2])
+    JOBS.append(self)
+    return self.p
   
   def capture(self, *fd):
     """
@@ -280,9 +284,20 @@ class Pipe(object):
     """
     Fork-exec the pipeline but do not wait for its termination.
     
-    Return a subprocess.Popen object.
+    After spawned, each self.cmd[i] will have a 'p' attribute that is
+    the spawned subprocess.Popen object.
+    
+    >>> yesno = Pipe(Cmd('yes'), Cmd(['grep', 'no'])).spawn()
+    >>> yesno.cmd[0].p.kill()
+    >>> yesno.cmd[-1].p.wait()
+    1
     """
-    raise NotImplementedError()
+    prev = self.cmd[0].fd[0]
+    for c in self.cmd:
+      c.p = subprocess.Popen(c.cmd, stdin=prev, stdout=c.fd[1], stderr=c.fd[2], cwd=c.cd, env=c.env)
+      prev = c.p.stdout
+    JOBS.append(self)
+    return self
   
   def capture(self, *fd):
     """
@@ -453,9 +468,14 @@ def __test():
   ...
   ValueError: cannot capture ...
   
-  ### This one is tricky
-  >>> Pipe(Sh('echo -n foo; echo -n bar >&2'), Sh('cat >&2')).capture(2).read()
-  'barfoo'
+  >>> Pipe(Sh('echo -n foo; sleep 0.005; echo -n bar >&2'), Sh('cat >&2')).capture(2).read()
+  'foobar'
+  
+  >>> Pipe(Cmd('yes'), Cmd('cat', {1: os.devnull})).spawn() #doctest: +ELLIPSIS
+  Pipe(...
+  >>> JOBS[-1].cmd[0].p.kill()
+  >>> JOBS[-1].cmd[-1].p.wait()
+  0
   """
   pass
 

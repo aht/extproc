@@ -1,4 +1,4 @@
-store a global list of spawn()'ed JOBS
+different repr() after spawn()'ed or terminated
 support {fd: CLOSE} pre-exec
 support full I/O redirection
   * subprocess can send child's stderr to its stdout but not vice versa
