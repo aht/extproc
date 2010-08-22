@@ -56,8 +56,10 @@ class NonZeroExit(Exception):
   def __init__(self, exit_status):
     self.exit_status = exit_status
   def __str__(self):
-    return "child exited with status %s" % (self.exit_status)
-
+    if self.exit_status > 0:
+      return "child exited with status %s" % (self.exit_status)
+    else:
+      return "child terminated by signal %s" % (-self.exit_status)
 
 Capture = collections.namedtuple("Capture", "stdout stderr")
 
