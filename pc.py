@@ -43,7 +43,7 @@ import sys
 import tempfile
 
 
-DEFAULT_FD = {0: sys.stdin, 1: sys.stdout, 2: sys.stderr}
+DEFAULT_FD = {0: 0, 1: 1, 2: 2}
 SILENCE = {0: os.devnull, 1: os.devnull, 2: os.devnull}
 PIPE = subprocess.PIPE # should be -1
 STDOUT = subprocess.STDOUT # should be -2
@@ -87,14 +87,14 @@ class Cmd(object):
       Currently, the following redirects work:
       * when v is an int: redirection of {2: 1} or {k: v} for v ≥ 3 and v is an open file descriptor
       * when v is a string: if it can be open()'ed with mode 'r+'
-      * when v is a file: offer the most control over mode of operation
-      * when v is None: close the file descriptor k after fork
+      * when v is a file: always, and offer the most control over mode of operation
+      * when v is None: close the file descriptor k after fork, not implemented
 
     Note that the constructor only saves information in the object and
     does not actually execute anything.
     
     >>> Cmd("/bin/sh -c 'echo foo'")
-    Cmd(['/bin/sh', '-c', 'echo foo'], cd=None, e={}, fd={0: '<stdin>', 1: '<stdout>', 2: '<stderr>'})
+    Cmd(['/bin/sh', '-c', 'echo foo'], cd=None, e={}, fd={0: 0, 1: 1, 2: 2})
     """
     if isinstance(cmd, basestring):
       self.cmd = shlex.split(cmd)
@@ -189,12 +189,12 @@ class Cmd(object):
     if not fd <= set([1, 2]):
       raise NotImplementedError("can only capture a subset of fd [1, 2] for now")
     if 1 in fd:
-      if is_fileno(1, self.fd[1]) or (self.fd[1] is None):
+      if is_fileno(1, self.fd[1]) or (self.fd[1] is 1):
         self.fd[1] = PIPE
       else:
         raise ValueError("cannot capture the child's stdout: it had been redirected to %s" % self.fd[1])
     if 2 in fd:
-      if is_fileno(2, self.fd[2]) or (self.fd[2] is None):
+      if is_fileno(2, self.fd[2]) or (self.fd[2] is 2):
         self.fd[2] = PIPE
       else:
         raise ValueError("cannot capture the child's stderr: it had been redirected to %s" % self.fd[2])
@@ -245,6 +245,10 @@ class Pipe(object):
     will become 'echo foo | cat'.
     
     Extra enviroments 'e' will be exported to all sub-commands.
+    
+    >>> Pipe(Cmd('yes'), Cmd('cat', {1: os.devnull}))
+    Pipe(Cmd(['yes'], cd=None, e={}, fd={0: 0, 1: -1, 2: 2}),
+         Cmd(['cat'], cd=None, e={}, fd={0: 0, 1: '/dev/null', 2: 2}))
     """
     self.e = kwargs.get('e', {})
     self.env = os.environ.copy()
@@ -258,7 +262,7 @@ class Pipe(object):
     self.cmd = cmd
   
   def __repr__(self):
-    return "Pipe(%s)" % ("\n   | ".join(map(repr, self.cmd)),)
+    return "Pipe(%s)" % (",\n     ".join(map(repr, self.cmd)),)
   
   def run(self):
     """
@@ -313,7 +317,7 @@ class Pipe(object):
       fd = set(fd) or set([1])
     if not fd <= set([1, 2]):
       raise NotImplementedError("can only capture a subset of fd [1, 2] for now")
-    if 1 in fd and not (is_fileno(1, self.fd[1]) or (self.fd[1] is None)):
+    if 1 in fd and not (is_fileno(1, self.fd[1]) or (self.fd[1] is 1)):
       raise ValueError("cannot capture the last child's stdout: it had been redirected to %s" % self.fd[1])
     temp = None
     if 2 in fd:
@@ -321,17 +325,15 @@ class Pipe(object):
       self.fd[2] = temp
     prev = self.cmd[0].fd[0]
     for c in self.cmd[:-1]:
-      if 2 in fd:
-        if is_fileno(2, c.fd[2]) or (c.fd[2] is None):
-          c.fd[2] = temp
+      if 2 in fd and (is_fileno(2, c.fd[2]) or (c.fd[2] is 2)):
+        c.fd[2] = temp
       c.p = subprocess.Popen(c.cmd, stdin=prev, stdout=c.fd[1], stderr=c.fd[2], cwd=c.cd, env=c.env)
       prev = c.p.stdout
     c = self.cmd[-1]
     if 1 in fd:
       c.fd[1] = PIPE
-    if 2 in fd:
-      if is_fileno(2, c.fd[2]) or (c.fd[2] is None):
-        c.fd[2] = temp
+    if 2 in fd and (is_fileno(2, c.fd[2]) or (c.fd[2] is 2)):
+      c.fd[2] = temp
     c.p = subprocess.Popen(c.cmd, stdin=prev, stdout=c.fd[1], stderr=c.fd[2], cwd=c.cd, env=c.env)
     c.p.wait()
     if temp: temp.seek(0)
