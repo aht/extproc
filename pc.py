@@ -2,25 +2,38 @@
 """
 fork-exec and pipe with I/O redirection
 
-http://www.scsh.net/docu/html/man.html
-http://golang.org/pkg/os/#ForkExec
-http://golang.org/src/pkg/syscall/exec_unix.go?h=forkAndExecInChild#L91
-
 Design goals:
-  * Easy to fork-exec, capturing child's stdout/stderr or reuse parent's
+  * Easy to fork-exec commands, sync. or async.
+  * Easy to capture stdout/stderr of children (command substitution)
   * Easy to construct pipelines
   * Easy to express I/O redirections
-  * Easy to type
+  * Easy to type interactively
 
 In effect, make Python more usable as a system shell.
 
+Technically, pc.py is a layer on top of subprocess. The subprocess
+module support a rich API but is clumsy for many common use cases,
+namely sync/async fork-exec, command substitution and pipelining,
+all of which is trivial to do on system shells. [1] [2]
+
 The main interpreter process had better be a single thread, since
-forking multithreaded programs is not well understood by mortals.
+forking multithreaded programs is not well understood by mortals. [3]
 
 Doctests require /bin/sh to pass. Tested on Linux.
+
+[1] sh(1)
+[2] The Scheme Shell http://www.scsh.net/docu/html/man.html
+[3] http://golang.org/src/pkg/syscall/exec_unix.go
+
 """
 
-import collections, os, shlex, StringIO, subprocess, sys, tempfile
+import collections
+import os
+import shlex
+import StringIO
+import subprocess
+import sys
+import tempfile
 
 DEFAULT_FD = {0: sys.stdin, 1: sys.stdout, 2: sys.stderr}
 SILENCE = {0: os.devnull, 1: os.devnull, 2: os.devnull}
@@ -176,6 +189,19 @@ class Cmd(object):
     return Capture(p.stdout, p.stderr)
 
 
+class Sh(Cmd):
+  def __init__(self, cmd, fd={}, e={}, cd=None):
+    """
+    Prepare for a fork-exec of a shell command.
+    """
+    shcmd = ['/bin/sh', '-c']
+    if isinstance(cmd, basestring):
+      shcmd += shlex.split(cmd)
+    elif isinstance(cmd, (list, tuple)):
+      shcmd += cmd
+    super(Sh, self).__init__(shcmd, fd, e, cd)
+
+
 class Pipe(object):
   def __init__(self, *cmd):
     """
@@ -262,40 +288,50 @@ def here(string):
   f.seek(0)
   return f
 
-def run(*args, **kwargs):
-  """
-  >>> run(['sh', '-c', 'exit 2'])
-  2
-  """
-  return Cmd(*args, **kwargs).run()
-
-def cmdout(*args, **kwargs):
+def cmd(cmd, fd={}, e={}, cd=None):
   """
   Run the Cmd with its arguments, then returns its stdout as a byte string.
   
-  >>> cmdout(['/bin/sh', '-c', 'echo -n foo; echo -n bar >&2'], {2: 1})
+  >>> cmd(['/bin/sh', '-c', 'echo -n foo; echo -n bar >&2'], {2: 1})
   'foobar'
   """
-  f = Cmd(*args, **kwargs).capture(1)
+  f = Cmd(cmd, fd=fd, e=e, cd=cd).capture(1)
   try:
     s = f.read()
   finally:
     f.close()
   return s
 
-def pipeout(*args):
+def sh(cmd, fd={}, e={}, cd=None):
+  """
+  Run the shell command with its arguments, then returns its stdout as a byte string.
+  
+  >>> sh('echo -n foo; echo -n bar >&2', {2: 1})
+  'foobar'
+  """
+  f = Cmd(cmd, fd=fd, e=e, cd=cd).capture(1)
+  try:
+    s = f.read()
+  finally:
+    f.close()
+  return s
+
+def pipe(*cmds):
   """
   Run the pipeline with given Cmd's, then returns its stdout as a byte string.
   """
-  f = Pipe(*args).capture(1)
+  f = Pipe(*cmds).capture(1)
   try:
     s = f.read()
   finally:
     f.close()
   return s
 
-def spawn(*args, **kwargs):
-  return Cmd(*args, **kwargs).spawn()
+def spawn(cmd, fd={}, e={}, cd=None, sh=False):
+  if sh:
+    return Sh(cmd, fd=fd, e=e, cd=cd).spawn()
+  else:
+    return Cmd(cmd, fd=fd, e=e, cd=cd).spawn()
 
 
 def __test():
@@ -308,5 +344,4 @@ if __name__ == '__main__':
   import doctest
   n = doctest.testmod().failed
   if n > 0:
-    import sys
     sys.exit(n)
