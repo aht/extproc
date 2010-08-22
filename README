@@ -33,10 +33,11 @@ Doctests require /bin/sh to pass. Tested on Linux.
 Let's start forking!
 
 
-run(), spawn() and capture()
-============================
+Cmd.run(), Cmd.spawn() and Cmd.capture()
+========================================
 
 Cmd objects hold fork-exec info and can be run(), spawn()'ed or capture()'d.
+
 
 Cmd.run() performs a fork-exec-wait, e.g.
 
@@ -58,6 +59,7 @@ is equivalent to this shell's ampersand command:
     $ gvim -f &
 
 spawn(*) is equivalent to Cmd(*).spawn(). Have fun with proc.kill() :)
+
 
 Cmd.captured() also performs a fork-exec-wait but returns a subset of
 the child's [stdout, stdin] as file object(s), e.g.
@@ -92,7 +94,7 @@ The following append the child's stdout to the file 'abc' (equiv. to 'echo foo >
 
     >>> out = sh('echo foo', {1: open('abc', 'a')})
 
-os.devnull (which is a string) also works:
+os.devnull (which is just '/dev/null' on Unix) also works:
 
     >>> out = sh('echo bogus stuff', {1: os.devnull})
 
@@ -105,13 +107,13 @@ Pipe
 
 Pipe are constructed by a list of Cmd's. Pipes can also be run(), spawn()'ed or capture()'d, e.g.
 
-    >>> exit_status = Pipe(Cmd('dmesg'), Cmd('/bin/grep x')).run()
+    >>> exit_status = Pipe(Cmd('dmesg'), Cmd('grep x')).run()
     
-    >>> out = Pipe(Cmd('dmesg'), Cmd('/bin/grep x')).capture().read()
+    >>> out = Pipe(Cmd('dmesg'), Cmd('grep x')).capture().read()
 
 pipe(*) returns Pipe(*).capture(1).read() wrapped in a try: ... finally: close() clause.
 
-    >>> out = pipe(Cmd('dmesg'), Cmd('/bin/grep x'))
+    >>> out = pipe(Cmd('dmesg'), Cmd('grep x'))
 
 
 API REFERENCE
