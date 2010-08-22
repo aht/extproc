@@ -3,7 +3,7 @@
 process control: fork-exec and pipe with I/O redirection
 
 Design goals:
-  * Easy to fork-exec commands, sync. or async.
+  * Easy to fork-exec commands, wait or no wait
   * Easy to capture stdout/stderr of children (command substitution)
   * Easy to express I/O redirections
   * Easy to construct pipelines
@@ -47,10 +47,10 @@ import tempfile
 
 DEFAULT_FD = {0: sys.stdin, 1: sys.stdout, 2: sys.stderr}
 SILENCE = {0: os.devnull, 1: os.devnull, 2: os.devnull}
-_PIPE = subprocess.PIPE # should be -1
-_STDOUT = subprocess.STDOUT # should be -2
-CLOSE = _STDOUT - 1
-assert CLOSE not in (_PIPE, _STDOUT) # should never happen
+PIPE = subprocess.PIPE # should be -1
+STDOUT = subprocess.STDOUT # should be -2
+CLOSE = None
+assert CLOSE not in (PIPE, STDOUT) # should never happen
 
 
 def is_fileno(n, f):
@@ -76,26 +76,27 @@ class Cmd(object):
     of working directory, extra environment variables and I/O
     redirections if necessary.
     
-    Parameter 'cmd' should be a list, just like in subprocess.Popen().
-    If it is a string, it is passed to shlex.split().
+    :param cmd: a list of command argurments.  If a string, it
+        is passed to shlex.split().
     
-    Parameter 'e' should be a dict of *extra* enviroment variables.
+    :param e: a dict of *extra* enviroment variables.
     
-    If fd[k] is a string, it will be open()'ed with mode 'r+'.
-    It's best that the client pass in opened the files.
+    :param fd: a dict mapping k in [0, 1, 2] → v of type [file, int, string, None]
     
-    The constructor only saves information in the object and does
-    not actually execute anything.
+      Whatever is pointed to by fd[0], fd[1] and fd[2] will become the
+      child's stdin, stdout and stderr, respectively.
+      
+      Currently, the following redirects work:
+      * when v is an int: redirection of {2: 1} or {k: v} for v ≥ 3 and v is an open file descriptor
+      * when v is a string: if it can be open()'ed with mode 'r+'
+      * when v is a file: offer the most control over mode of operation
+      * when v is None: close the file descriptor k after fork
+
+    Note that the constructor only saves information in the object and
+    does not actually execute anything.
     
     >>> Cmd("/bin/sh -c 'echo foo'")
     Cmd(['/bin/sh', '-c', 'echo foo'], cd=None, e={}, fd={0: '<stdin>', 1: '<stdout>', 2: '<stderr>'})
-    
-    >>> Cmd(['/bin/sh', '-c', 'echo -n foo; echo -n bar >&2'], fd={2: 1}).capture(1).read()
-    'foobar'
-    
-    >>> Cmd(['/bin/sh', '-c', 'echo -n $var'], e={'var': 'foobar'}).capture(1).read()
-    'foobar'
-    
     """
     if isinstance(cmd, basestring):
       self.cmd = shlex.split(cmd)
@@ -112,14 +113,16 @@ class Cmd(object):
     for k, v in fd.iteritems():
       if not isinstance(k, int):
         raise TypeError("fd keys must have type int")
+      elif k < 0 or k >= 3:
+        raise NotImplementedError("redirection {%s: %s} not supported" % (k, v))
       if isinstance(v, basestring):
         self.fd[k] = open(v, 'r' if k == 0 else ('w' if k in (1, 2) else 'r+'))
       elif isinstance(v, int):
         if k == 2 and v == 1:
-          self.fd[k] = _STDOUT
-        else:
-          raise NotImplementedError("redirection {%s: %s} not supported by subprocess" % (k, v))
-      elif not (hasattr(v, 'fileno') or (v is None)):
+          self.fd[k] = STDOUT
+        elif (v in (0, 1, 2)):
+          raise NotImplementedError("redirection {%s: %s} not supported" % (k, v))
+      elif not (hasattr(v, 'fileno') or (v is CLOSE)):
         raise ValueError("fd value %s is not a file, int, string or None" % (v,))
    
   def __repr__(self):
@@ -149,20 +152,20 @@ class Cmd(object):
   def capture(self, *fd):
     """
     Fork-exec the Cmd and wait for its termination, capturing the
-    child's stdout, stderr accordingly:
-   
-        * capture(0) returns the child's stdout file object
-        * capture(1) returns the child's stderr file object
-        * capture(0, 1) returns a named tuple of both
+    output and/or error:
+    
+      * capture(1) returns the child's stdout file object
+      * capture(2) returns the child's stderr file object
+      * capture(1, 2) returns a named tuple of both
     
     Don't forget to close the file objects!
     
     Note that only the fds that reuse the parent's stdout/stderr (when
-    you had not redirected them elsewhere) can be captured.
-    
-    Raise NonZeroExit if the child's exit status != 0.
-    The error object contains 'out' and/or 'err' attributes that were
-    captured from the child before it terminates.
+    it had not been redirected them elsewhere) can be captured.
+
+    Raise NonZeroExit if the child's exit status != 0.  The error
+    object contains 'stdout' and/or 'stderr' attributes that were
+    captured from it before termination.
     
     >>> Cmd("/bin/sh -c 'echo -n foo'").capture().read()
     'foo'
@@ -187,12 +190,12 @@ class Cmd(object):
       raise NotImplementedError("can only capture a subset of fd [1, 2] for now")
     if 1 in fd:
       if is_fileno(1, self.fd[1]) or (self.fd[1] is None):
-        self.fd[1] = _PIPE
+        self.fd[1] = PIPE
       else:
         raise ValueError("cannot capture the child's stdout: it had been redirected to %s" % self.fd[1])
     if 2 in fd:
       if is_fileno(2, self.fd[2]) or (self.fd[2] is None):
-        self.fd[2] = _PIPE
+        self.fd[2] = PIPE
       else:
         raise ValueError("cannot capture the child's stderr: it had been redirected to %s" % self.fd[2])
     p = subprocess.Popen(self.cmd, cwd=self.cd, env=self.env, stdin=self.fd[0], stdout=self.fd[1], stderr=self.fd[2])
@@ -250,7 +253,7 @@ class Pipe(object):
       c.e.update(self.e)
       c.env.update(self.e)
     for c in cmd[:-1]:
-      c.fd[1] = _PIPE
+      c.fd[1] = PIPE
     self.fd = {0: cmd[0].fd[0], 1: cmd[-1].fd[1], 2: sys.stderr}
     self.cmd = cmd
   
@@ -279,19 +282,25 @@ class Pipe(object):
   
   def capture(self, *fd):
     """
-    Fork-exec the pipeline and wait for its termination, capturing the last child's
-    stdout.
+    Fork-exec the Cmd and wait for its termination, capturing the
+    output and/or error.
     
-    Return the child's stdout file object. Don't forget to close it!
+      * capture(1) returns the last child's stdout file object
+      * capture(2) returns a rewinded temporary file object that every
+      child has been writing to as its stderr (when its stderr is not
+      redirected elsewhere)
+      * capture(1, 2) returns a named tuple of both
     
-    Raise NonZeroExit if the child's exit status != 0.
-    The error object contains a 'stdout'  attribute that were
-    captured from the child before it terminates.
+    Don't forget to close the file objects!
     
-    >>> Pipe(Sh('echo -n foo; echo -n bar >&2'), Cmd('cat')).capture().read()
+    Raise NonZeroExit if the last child's exit status != 0.  The error
+    object contains 'stdout' and/or 'stderr' attributes that were
+    captured from it before termination.
+    
+    >>> Pipe(Sh('echo -n foo; echo -n bar >&2', {2: os.devnull}), Cmd('cat')).capture().read()
     'foo'
-  
-    >>> Pipe(Sh('echo -n foo; echo -n bar >&2'), Cmd('cat', {2: 1})).capture(2).read()
+    
+    >>> Pipe(Sh('echo -n foo; echo -n bar >&2'), Cmd('cat', {1: os.devnull})).capture(2).read()
     'bar'
     """
     if isinstance(fd, int):
@@ -315,7 +324,7 @@ class Pipe(object):
       prev = c.p.stdout
     c = self.cmd[-1]
     if 1 in fd:
-      c.fd[1] = _PIPE
+      c.fd[1] = PIPE
     if 2 in fd:
       if is_fileno(2, c.fd[2]) or (c.fd[2] is None):
         c.fd[2] = temp
@@ -343,6 +352,8 @@ class Pipe(object):
 
 def here(string):
   """
+  Make a temporary file from a string for use in redirection.
+  
   >>> cmd('cat', {0: here("foo bar")})
   'foo bar'
   """
@@ -353,7 +364,8 @@ def here(string):
 
 def cmd(cmd, fd={}, e={}, cd=None):
   """
-  Run the Cmd with its arguments, then returns its stdout as a byte string.
+  Perform a fork-exec-wait of a Cmd and return the its stdout
+  as a byte string.
   
   >>> cmd(['/bin/sh', '-c', 'echo -n foo; echo -n bar >&2'], {2: 1})
   'foobar'
@@ -367,7 +379,8 @@ def cmd(cmd, fd={}, e={}, cd=None):
 
 def sh(cmd, fd={}, e={}, cd=None):
   """
-  Run the shell command with its arguments, then returns its stdout as a byte string.
+  Perform a fork-exec-wait of a Sh command and return its stdout
+  as a byte string.
   
   >>> sh('echo -n foo >&2', {2: 1})
   'foo'
@@ -401,6 +414,25 @@ def __test():
   """
   >>> sh('echo -n foo; echo -n bar >&2', {2: 1})
   'foobar'
+  
+  >>> sh('echo -n $var', e={'var': 'foobar'})
+  'foobar'
+  
+  >>> sh('echo -n foo; echo -n bar >&2', {1: 2})
+  Traceback (most recent call last):
+  ...
+  NotImplementedError: redirection {1: 2} not supported
+  
+  >>> f = tempfile.TemporaryFile()
+  >>> Sh('echo -n foo', {1: f.fileno()}).run()
+  0
+  >>> f.seek(0); f.read()
+  'foo'
+  
+  >>> sh('echo -n foo; echo -n bar >&2', {5: 12})
+  Traceback (most recent call last):
+  ...
+  NotImplementedError: redirection {5: 12} not supported
   
   >>> sh("echo bogus stuff", {1: os.devnull}) #doctest: +ELLIPSIS
   Traceback (most recent call last):
