@@ -1,4 +1,3 @@
-make here("string") work
 store a global list of spawn()'ed JOBS
 support capturing stderr of Pipe
 support {fd: CLOSE} after exec

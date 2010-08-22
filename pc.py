@@ -176,7 +176,7 @@ class Cmd(object):
       fd = set(fd) or set([1])
     if not fd <= set([1, 2]):
       raise ValueError("can only capture a subset of fd [1, 2] for now")
-    arg = dict(args=self.cmd, cwd=self.cd, env=self.env, stdout=_PIPE, stderr=_PIPE)
+    arg = dict(args=self.cmd, cwd=self.cd, env=self.env, stdin=self.fd[0], stdout=_PIPE, stderr=_PIPE)
     if 1 in fd:
       if not ((self.fd[1] is not sys.stdout) or (self.fd[1] is not None)):
         raise ValueError("cannot capture the child's stdout, it has been redirected")
@@ -309,13 +309,13 @@ class Pipe(object):
 
 def here(string):
   """
-  ### >>> cmd('cat', {0: here("foo bar")})
+  >>> cmd('cat', {0: here("foo bar")})
   'foo bar'
   """
-  f = tempfile.TemporaryFile()
-  f.write(string)
-  f.seek(0)
-  return f
+  t = tempfile.TemporaryFile()
+  t.write(string)
+  t.seek(0)
+  return t
 
 def cmd(cmd, fd={}, e={}, cd=None):
   """
