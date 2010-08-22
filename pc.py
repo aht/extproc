@@ -5,8 +5,8 @@ fork-exec and pipe with I/O redirection
 Design goals:
   * Easy to fork-exec commands, sync. or async.
   * Easy to capture stdout/stderr of children (command substitution)
-  * Easy to construct pipelines
   * Easy to express I/O redirections
+  * Easy to construct pipelines
   * Use short names for easy interactive typing
 
 In effect, make Python more usable as a system shell.
@@ -14,7 +14,7 @@ In effect, make Python more usable as a system shell.
 Technically, pc.py is a layer on top of subprocess. The subprocess
 module support a rich API but is clumsy for many common use cases,
 namely sync/async fork-exec, command substitution and pipelining,
-all of which is trivial to do on system shells. [1] [2]
+all of which is trivial to do on system shells. [1][2]
 
 To my knowledge, this is powerful enough to do all things that would
 have required using subshells in /bin/sh. [3]  (The implementation
@@ -23,7 +23,11 @@ does not double-fork as is done in subshell)
 The main interpreter process had better be a single thread, since
 forking multithreaded programs is not well understood by mortals. [4]
 
+This module depends on Python 2.6, or where subprocess is available.
 Doctests require /bin/sh to pass. Tested on Linux.
+
+This is an alpha release. Some features are unimplemented. Expect bugs.
+
 
 [1] sh(1)
 [2] The Scheme Shell -- http://www.scsh.net/docu/html/man.html
@@ -42,11 +46,10 @@ import tempfile
 
 DEFAULT_FD = {0: sys.stdin, 1: sys.stdout, 2: sys.stderr}
 SILENCE = {0: os.devnull, 1: os.devnull, 2: os.devnull}
-PIPE = subprocess.PIPE
-assert PIPE == -1
-STDOUT = subprocess.STDOUT
-assert STDOUT == -2
-CLOSE = -3
+_PIPE = subprocess.PIPE # should be -1
+_STDOUT = subprocess.STDOUT # should be -2
+CLOSE = _STDOUT - 1
+assert CLOSE not in (_PIPE, _STDOUT) # should never happen
 
 
 class NonZeroExit(Exception):
@@ -101,9 +104,8 @@ class Cmd(object):
       if isinstance(v, basestring):
         self.fd[k] = open(v, 'r' if k == 0 else ('w' if k in (1, 2) else 'r+'))
       elif isinstance(v, int):
-        # self.fd[k] = os.fdopen(v, 'r' if k == 0 else ('w' if k in (1, 2) else 'r+'))
         if k == 2 and v == 1:
-          self.fd[k] = STDOUT
+          self.fd[k] = _STDOUT
    
   def __repr__(self):
     return "Cmd(%s, cd=%s, e=%s, fd=%s)" % (self.cmd, self.cd, self.e, dict(
@@ -168,7 +170,7 @@ class Cmd(object):
       fd = set(fd) or set([1])
     if not fd <= set([1, 2]):
       raise ValueError("can only capture a subset of fd [1, 2] for now")
-    arg = dict(args=self.cmd, cwd=self.cd, env=self.env, stdout=PIPE, stderr=PIPE)
+    arg = dict(args=self.cmd, cwd=self.cd, env=self.env, stdout=_PIPE, stderr=_PIPE)
     if 1 in fd:
       if not ((self.fd[1] is not sys.stdout) or (self.fd[1] is not None)):
         raise ValueError("cannot capture the child's stdout, it has been redirected")
@@ -206,7 +208,7 @@ class Sh(Cmd):
     """
     Prepare for a fork-exec of a shell command.
     
-    Equivalent to Cmd(['/bin/sh', '-c', cmd], **kwargs)
+    Equivalent to Cmd(['/bin/sh', '-c', cmd], **kwargs).
     """
     super(Sh, self).__init__(['/bin/sh', '-c', cmd], fd=fd, e=e, cd=cd)
 
@@ -221,7 +223,7 @@ class Pipe(object):
     will become 'echo foo | cat'.
     """
     for c in cmd[:-1]:
-      c.fd[1] = PIPE
+      c.fd[1] = _PIPE
     self.fd = {0: cmd[0].fd[0], 1: cmd[-1].fd[1], 2: sys.stderr}
     self.cmd = cmd
   
@@ -232,7 +234,7 @@ class Pipe(object):
   
   def run(self):
     """
-    Fork-exec the pipeline and waits for its termination.
+    Fork-exec the pipeline and wait for its termination.
     
     Return the last child's exit status.
     """
@@ -273,7 +275,7 @@ class Pipe(object):
       prev = c.p.stdout
     c = self.cmd[-1]
     if 1 in fd:
-      c.p = subprocess.Popen(c.cmd, stdin=prev, stdout=PIPE, stderr=c.fd[2], cwd=c.cd, env=c.env)
+      c.p = subprocess.Popen(c.cmd, stdin=prev, stdout=_PIPE, stderr=c.fd[2], cwd=c.cd, env=c.env)
     else:
       c.p = subprocess.Popen(c.cmd, stdin=prev, stdout=c.fd[1], stderr=c.fd[2], cwd=c.cd, env=c.env)
     if c.p.wait() != 0:

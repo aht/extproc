@@ -1,10 +1,10 @@
 fork-exec and pipe with I/O redirection
 
 Design goals:
-  * Easy to fork-exec commands, sync. or async.
+  * Easy to fork-exec commands, wait or no wait
   * Easy to capture stdout/stderr of children (command substitution)
-  * Easy to construct pipelines
   * Easy to express I/O redirections
+  * Easy to construct pipelines
   * Use short names for easy interactive typing
 
 In effect, make Python more usable as a system shell.
@@ -21,7 +21,10 @@ does not double-fork as is done in subshell)
 The main interpreter process had better be a single thread, since
 forking multithreaded programs is not well understood by mortals. [4]
 
+This module depends on Python 2.6, or where subprocess is available.
 Doctests require /bin/sh to pass. Tested on Linux.
+
+This is an alpha release. Some features are unimplemented. Expect bugs.
 
 
 [1] sh(1)
@@ -111,9 +114,11 @@ Pipe are constructed by a list of Cmd's. Pipes can also be run(), spawn()'ed or 
     
     >>> out = Pipe(Cmd('dmesg'), Cmd('grep x')).capture().read()
 
-pipe(*) returns Pipe(*).capture(1).read() wrapped in a try: ... finally: close() clause.
+pipe(*) returns Pipe(*).capture(1).read() wrapped in a try: ... finally: close() clause, e.g. the following
 
-    >>> out = pipe(Cmd('dmesg'), Cmd('grep x'))
+    >>> item = pipe(Cmd('find -mmin +30'), Cmd('dmenu'))
+
+finds files modified in the last 30 minutes and pipes to dmenu to select a single item.
 
 
 API REFERENCE
