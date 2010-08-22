@@ -7,7 +7,7 @@ Design goals:
   * Easy to capture stdout/stderr of children (command substitution)
   * Easy to construct pipelines
   * Easy to express I/O redirections
-  * Easy to type interactively
+  * Use short names for easy interactive typing
 
 In effect, make Python more usable as a system shell.
 
@@ -16,13 +16,18 @@ module support a rich API but is clumsy for many common use cases,
 namely sync/async fork-exec, command substitution and pipelining,
 all of which is trivial to do on system shells. [1] [2]
 
+To my knowledge, this is powerful enough to do all things that would
+have required using subshells in /bin/sh. [3]  (The implementation
+does not double-fork as is done in subshell)
+
 The main interpreter process had better be a single thread, since
-forking multithreaded programs is not well understood by mortals. [3]
+forking multithreaded programs is not well understood by mortals. [4]
 
 Doctests require /bin/sh to pass. Tested on Linux.
 
 [1] sh(1)
-[2] The Scheme Shell http://www.scsh.net/docu/html/man.html
+[2] The Scheme Shell -- http://www.scsh.net/docu/html/man.html
+[4] http://tldp.org/LDP/abs/html/subshells.html
 [3] http://golang.org/src/pkg/syscall/exec_unix.go
 
 """
@@ -126,14 +131,15 @@ class Cmd(object):
   
   def capture(self, *fd):
     """
-    Fork-exec the Cmd and wait for its termination, capturing child's
-    stdout, stderr accordingly:
-    
+    Fork-exec the Cmd and wait for its termination, capturing the
+    child's stdout, stderr accordingly:
+   
         * capture(0) returns the child's stdout file object
         * capture(1) returns the child's stderr file object
         * capture(0, 1) returns a named tuple of both
     
-    When capture()'ing, the 'fd' parameter takes precedence over 'self.fd'.
+    Only the fds that reuse the parent's stdout/stderr (i.e. when you
+    had not redirected them elsewhere) will be captured.
 
     Don't forget to close the file objects!
     
@@ -141,16 +147,16 @@ class Cmd(object):
     The error object contains 'out' and/or 'err' attributes that were
     captured from the child before it terminates.
     
-    >>> Cmd("sh -c 'echo -n foo'").capture().read()
+    >>> Cmd("/bin/sh -c 'echo -n foo'").capture().read()
     'foo'
    
-    >>> Cmd("sh -c 'echo -n foo'").capture(1).read()
+    >>> Cmd("/bin/sh -c 'echo -n foo'").capture(1).read()
     'foo'
     
-    >>> Cmd("sh -c 'echo -n bar >&2'").capture(2).read()
+    >>> Cmd("/bin/sh -c 'echo -n bar >&2'").capture(2).read()
     'bar'
     
-    >>> cout, cerr = Cmd("sh -c 'echo -n foo; echo -n bar >&2'").capture(1, 2)
+    >>> cout, cerr = Cmd("/bin/sh -c 'echo -n foo; echo -n bar >&2'").capture(1, 2)
     >>> cout.read()
     'foo'
     >>> cerr.read()
@@ -163,10 +169,16 @@ class Cmd(object):
     if not fd <= set([1, 2]):
       raise ValueError("can only capture a subset of fd [1, 2] for now")
     arg = dict(args=self.cmd, cwd=self.cd, env=self.env, stdout=PIPE, stderr=PIPE)
-    if 1 not in fd:
-    	arg['stdout'] = self.fd[1]
-    if 2 not in fd:
-    	arg['stderr'] = self.fd[2]
+    if 1 in fd:
+      if not ((self.fd[1] is not sys.stdout) or (self.fd[1] is not None)):
+        raise ValueError("cannot capture the child's stdout, it has been redirected")
+    else:
+      arg['stdout'] = self.fd[1]
+    if 2 in fd:
+      if not ((self.fd[2] is not sys.stderr) or (self.fd[2] is not None)):
+        raise ValueError("cannot capture the child's stderr, it has been redirected")
+    else:
+      arg['stderr'] = self.fd[2]
     p = subprocess.Popen(**arg)
     if p.stdin:
       p.stdin.close()
@@ -193,19 +205,20 @@ class Sh(Cmd):
   def __init__(self, cmd, fd={}, e={}, cd=None):
     """
     Prepare for a fork-exec of a shell command.
+    
+    Equivalent to Cmd(['/bin/sh', '-c', cmd], **kwargs)
     """
-    shcmd = ['/bin/sh', '-c']
-    if isinstance(cmd, basestring):
-      shcmd += shlex.split(cmd)
-    elif isinstance(cmd, (list, tuple)):
-      shcmd += cmd
-    super(Sh, self).__init__(shcmd, fd, e, cd)
+    super(Sh, self).__init__(['/bin/sh', '-c', cmd], fd=fd, e=e, cd=cd)
 
 
 class Pipe(object):
   def __init__(self, *cmd):
     """
     Prepare a pipeline from a list of Cmd's.
+
+    The stdins of cmd[1:] will be changed to use pipe input,
+    e.g. a pathetic pipeline such as 'echo foo | cat < file'
+    will become 'echo foo | cat'.
     """
     for c in cmd[:-1]:
       c.fd[1] = PIPE
@@ -280,7 +293,7 @@ class Pipe(object):
 
 def here(string):
   """
-  ### >>> capture('cat', {0: here("foo bar")})
+  ### >>> cmd('cat', {0: here("foo bar")})
   'foo bar'
   """
   f = tempfile.TemporaryFile()
@@ -306,10 +319,10 @@ def sh(cmd, fd={}, e={}, cd=None):
   """
   Run the shell command with its arguments, then returns its stdout as a byte string.
   
-  >>> sh('echo -n foo; echo -n bar >&2', {2: 1})
-  'foobar'
+  >>> sh('echo -n foo >&2', {2: 1})
+  'foo'
   """
-  f = Cmd(cmd, fd=fd, e=e, cd=cd).capture(1)
+  f = Sh(cmd, fd=fd, e=e, cd=cd).capture(1)
   try:
     s = f.read()
   finally:
@@ -336,6 +349,8 @@ def spawn(cmd, fd={}, e={}, cd=None, sh=False):
 
 def __test():
   """
+  >>> sh('echo -n foo; echo -n bar >&2', {2: 1})
+  'foobar'
   """
   pass
 
