@@ -39,20 +39,20 @@ Cmd objects hold fork-exec info and can be run(), spawn()'ed or capture()'d.
 
 Cmd.run() performs a fork-exec-wait, e.g.
 
-    >>> Cmd('dmesg').run()
+    >>> exit_status = Cmd('dmesg').run()
 
-which is equivalent to a "normal" shell command:
+which is equivalent to a "normal" shell's command:
 
     $ dmesg
 
 Sh(cmd, **kwargs) is equivalent to Cmd(['/bin/sh', '-c', cmd], **kwargs)
 
 
-spawn() performs an fork-exec (asynchronous), e.g.
+spawn() performs an fork-exec (asynchronous) and returns a subprocess.Popen object, e.g.
 
-    >>> Cmd(['gvim', '-f']).spawn()
+    >>> subproc = Cmd(['gvim', '-f']).spawn()
 
-This is equivalent to shell's ampersand:
+which is equivalent to a shell's ampersand command,
 
     $ gvim -f &
 
@@ -60,15 +60,15 @@ This is equivalent to shell's ampersand:
 captured() is like run() but could return a subset of the child's
 [stdout, stdin] as file object(s), e.g.
 
-    >>> cout = Sh('echo -n foo').capture(1).read()
-    >>> cout = Sh('echo -n foo >&2').capture(2).read()
-    >>> cout, cerr = Sh('echo -n foo; echo -n bar >&2').capture(1, 2)
+    >>> out = Sh('echo -n foo').capture(1).read()
+    >>> err = Sh('echo -n foo >&2').capture(2).read()
+    >>> out, err = Sh('echo -n foo; echo -n bar >&2').capture(1, 2)
 
 This is equivalent to shell backquotes aka command substitution (which
 cannot capture stderr separately):
 
-    $ cout=`echo -n foo`
-    $ cout=$(echo -n foo; echo -n bar >&2)
+    $ out=`echo -n foo`
+    $ outerr=$(echo -n foo; echo -n bar 2>&1 >&2)
 
 cmd(*) returns Cmd(*).capture(1).read() wrapped in a try: ... finally: close() clause.
 sh(*) returns Sh(*).capture(1).read() wrapped in a try: ... finally: close() clause.
@@ -80,32 +80,35 @@ I/O redirection
 I/O redirections are performed by specifying a dict mapping file
 descriptors to either open files, strings, or other file descriptors.
 
-    >>> Sh('echo -n foo; echo -n bar >&2', fd={2: 1}).capture(1).read()
+    >>> out = Sh('echo -n foo; echo -n bar >&2', fd={2: 1}).capture(1).read()
 
-or more succintly,
+or more succintly (and safer),
 
-    >>> sh('echo -n foo; echo -n bar >&2', {2: 1})
+    >>> out = sh('echo -n foo; echo -n bar >&2', {2: 1})
 
-You can pass in an open file as well, the following append the child's
-stdout to the file 'abc':
+The following append the child's stdout to the file 'abc' (equiv. to 'echo foo >> abc')
 
-    >>> sh('echo -n foo; echo -n bar', {1: open('abc', 'a')})
+    >>> out = sh('echo foo', {1: open('abc', 'a')})
 
-os.devnull (which is a string) works
+os.devnull (which is a string) also works
 
-    >>> sh('echo bogus stuff', {1: os.devnull})
+    >>> out = sh('echo bogus stuff', {1: os.devnull})
 
-In fact you can pass in fd=SILIENCE, which send everything straight to
-hell, hmm...  I mean /dev/null.
+In fact you can pass in fd=SILIENCE, which send everything
+straight to hell, hmm...  I mean /dev/null.
+
 
 Pipe
 ----
 
 Pipe are constructed by a list of Cmd's. Pipes can also be run(), spawn()'ed or capture()'d.
 
-    >>> s = Pipe(Cmd('dmesg'), Cmd('/bin/grep x')).capture(1).read()
+    >>> exit_status = Pipe(Cmd('dmesg'), Cmd('/bin/grep x')).run()
     
-    >>> s = pipe(Cmd('dmesg'), Cmd('/bin/grep x'))
+    >>> out = Pipe(Cmd('dmesg'), Cmd('/bin/grep x')).capture().read()
+    >>> out = pipe(Cmd('dmesg'), Cmd('/bin/grep x'))
+
+pipe(*) returns Pipe(*).capture(1).read() wrapped in a try: ... finally: close() clause.
 
 
 API REFERENCE
