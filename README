@@ -1,22 +1,32 @@
 fork-exec and pipe with I/O redirection
 
 Design goals:
-  * Easy to fork-exec, capturing child's stdout/stderr or reuse parent's
+  * Easy to fork-exec commands, sync. or async.
+  * Easy to capture stdout/stderr of children (command substitution)
   * Easy to construct pipelines
   * Easy to express I/O redirections
-  * Easy to type
+  * Use short names for easy interactive typing
 
 In effect, make Python more usable as a system shell.
 
-Technically, pc.py is a layer on top of subprocess that provides
-functionality of tradionally Unix shells.
+Technically, pc.py is a layer on top of subprocess. The subprocess
+module support a rich API but is clumsy for many common use cases,
+namely sync/async fork-exec, command substitution and pipelining,
+all of which is trivial to do on system shells. [1] [2]
+
+To my knowledge, this is powerful enough to do all things that would
+have required using subshells in /bin/sh. [3]  (The implementation
+does not double-fork as is done in subshell)
 
 The main interpreter process had better be a single thread, since
-forking multithreaded programs is not well understood by mortals.
+forking multithreaded programs is not well understood by mortals. [4]
 
 Doctests require /bin/sh to pass. Tested on Linux.
 
-This is an alpha release. Some features are unimplemented. Expect bugs.
+[1] sh(1)
+[2] The Scheme Shell -- http://www.scsh.net/docu/html/man.html
+[4] http://tldp.org/LDP/abs/html/subshells.html
+[3] http://golang.org/src/pkg/syscall/exec_unix.go
 
 
 INTRODUCTION
@@ -35,7 +45,8 @@ which is equivalent to a "normal" shell command:
 
     $ dmesg
 
-run(*) is a shorthand for Cmd(*).run()
+Sh(cmd, **kwargs) is equivalent to Cmd(['/bin/sh', '-c', cmd], **kwargs)
+
 
 spawn() performs an fork-exec (asynchronous), e.g.
 
@@ -45,20 +56,22 @@ This is equivalent to shell's ampersand:
 
     $ gvim -f &
 
+
 captured() is like run() but could return a subset of the child's
 [stdout, stdin] as file object(s), e.g.
 
-    >>> cout = Cmd(['/bin/sh', '-c', 'echo -n foo']).capture(1).read()
-    >>> cin = Cmd(['/bin/sh', '-c', 'echo -n foo >&2']).capture(2).read()
-    >>> cin, cout = Cmd(['/bin/sh', '-c', 'echo -n foo; echo -n bar >&2']).capture(1, 2)
+    >>> cout = Sh('echo -n foo').capture(1).read()
+    >>> cout = Sh('echo -n foo >&2').capture(2).read()
+    >>> cout, cerr = Sh('echo -n foo; echo -n bar >&2').capture(1, 2)
 
 This is equivalent to shell backquotes aka command substitution (which
-cannot capture stderr):
+cannot capture stderr separately):
 
-    $ cout=`echo -n foo; echo -n bar >&2`
+    $ cout=`echo -n foo`
     $ cout=$(echo -n foo; echo -n bar >&2)
 
-cmdout(*) is a shorthand for a careful Cmd(*).capture(1).read() and close().
+cmd(*) returns Cmd(*).capture(1).read() wrapped in a try: ... finally: close() clause.
+sh(*) returns Sh(*).capture(1).read() wrapped in a try: ... finally: close() clause.
 
 
 I/O redirection
@@ -67,40 +80,35 @@ I/O redirection
 I/O redirection are performed by specifying a dict mapping file
 descriptors to either open files, strings, or other file descriptors.
 
-    >>> Cmd(['/bin/sh', '-c', 'echo -n foo; echo -n bar >&2'], fd={2: 1}).capture(1).read()
+    >>> Sh('echo -n foo; echo -n bar >&2', fd={2: 1}).capture(1).read()
 
 or more succintly,
 
-    >>> run('/bin/sh-c "echo -n foo; echo -n bar >&2"', {2: 1})
+    >>> sh('echo -n foo; echo -n bar >&2', {2: 1})
 
-You can pass in an open file as well,
+You can pass in an open file as well, the following append the child's
+stdout to the file 'abc':
 
-    >>> run('/bin/sh -c "echo -n foo; echo -n bar"', {1: open('abc', 'w')})
+    >>> sh('echo -n foo; echo -n bar', {1: open('abc', 'a')})
 
 os.devnull (which is a string) works
 
-    >>> run('/bin/sh -c "echo bogus stuff"', {1: os.devnull})
+    >>> sh('echo bogus stuff', {1: os.devnull})
 
-In fact you can pass in the SILIENCE constant, which is a dict where
-everything goes straight to hell, hmm... I mean /dev/null.
+In fact you can pass in fd=SILIENCE, which send everything straight to
+hell, hmm...  I mean /dev/null.
 
 Pipe
 ----
 
 Pipe are constructed by a list of Cmd's. Pipe can also be run(), spawn()'ed or capture()'d.
 
-    >>> s = Pipe(Cmd('dmesg'), Cmd('grep x')).capture(1).read()
+    >>> s = Pipe(Cmd('dmesg'), Cmd('/bin/grep x')).capture(1).read()
     
-    >>> s = pipeout(Cmd('dmesg'), Cmd('grep x'))
+    >>> s = pipe(Cmd('dmesg'), Cmd('/bin/grep x'))
 
 
-My mind is a bit blank right now, more example later ...
+API REFERENCE
+=============
 
-See docstrings and doctests.
-    
-
-REFERENCE
-=========
-
-http://www.scsh.net/docu/html/man.html
-http://golang.org/pkg/os/#ForkExec
+See docstrings and doctests for now.
