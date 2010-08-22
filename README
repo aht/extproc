@@ -1,4 +1,4 @@
-fork-exec and pipe with I/O redirection
+process control -- fork-exec and pipe with I/O redirection
 
 Design goals:
   * Easy to fork-exec commands, wait or no wait

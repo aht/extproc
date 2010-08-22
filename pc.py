@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-fork-exec and pipe with I/O redirection
+process control: fork-exec and pipe with I/O redirection
 
 Design goals:
   * Easy to fork-exec commands, sync. or async.
@@ -87,6 +87,10 @@ class Cmd(object):
     
     >>> Cmd(['/bin/sh', '-c', 'echo -n foo; echo -n bar >&2'], fd={2: 1}).capture(1).read()
     'foobar'
+    
+    >>> Cmd(['/bin/sh', '-c', 'echo -n $var'], e={'var': 'foobar'}).capture(1).read()
+    'foobar'
+    
     """
     if isinstance(cmd, basestring):
       self.cmd = shlex.split(cmd)
@@ -216,17 +220,25 @@ class Sh(Cmd):
 
 
 class Pipe(object):
-  def __init__(self, *cmd):
+  def __init__(self, *cmd, **kwargs):
     """
     Prepare a pipeline from a list of Cmd's.
 
     The stdins of cmd[1:] will be changed to use pipe input,
     e.g. a pathetic pipeline such as 'echo foo | cat < file'
     will become 'echo foo | cat'.
+    
+    Extra enviroments 'e' will be exported to all sub-commands.
     """
+    self.e = kwargs.get('e', {})
+    self.env = os.environ.copy() # representational value for debug
+    self.env.update(self.e)
+    for c in cmd:
+      c.e.update(self.e)
+      c.env.update(self.e)
     for c in cmd[:-1]:
       c.fd[1] = _PIPE
-    self.fd = {0: cmd[0].fd[0], 1: cmd[-1].fd[1], 2: sys.stderr}
+    self.fd = {0: cmd[0].fd[0], 1: cmd[-1].fd[1], 2: sys.stderr} # representational value for debug
     self.cmd = cmd
   
   def __repr__(self):
@@ -333,11 +345,11 @@ def sh(cmd, fd={}, e={}, cd=None):
     f.close()
   return s
 
-def pipe(*cmds):
+def pipe(*cmds, **kwargs):
   """
   Run the pipeline with given Cmd's, then returns its stdout as a byte string.
   """
-  f = Pipe(*cmds).capture(1)
+  f = Pipe(*cmds, **kwargs).capture(1)
   try:
     s = f.read()
   finally:
@@ -355,6 +367,9 @@ def __test():
   """
   >>> sh('echo -n foo; echo -n bar >&2', {2: 1})
   'foobar'
+  
+  >>> pipe(Sh('echo -n $x'), Sh('cat; echo -n $x'), e=dict(x='foobar'))
+  'foobarfoobar'
   """
   pass
 
