@@ -17,12 +17,8 @@ module support a rich API but is clumsy for many common use cases,
 namely sync/async fork-exec, command substitution and pipelining,
 all of which is trivial to do on system shells. [1][2]
 
-To my knowledge, this is powerful enough to do all things that would
-have required using subshells in /bin/sh. [3]  (The implementation
-does not double-fork as is done in subshell)
-
 The main interpreter process had better be a single thread, since
-forking multithreaded programs is not well understood by mortals. [4]
+forking multithreaded programs is not well understood by mortals. [3]
 
 This module depends on Python 2.6, or where subprocess is available.
 Doctests require /bin/sh to pass. Tested on Linux.
@@ -30,9 +26,10 @@ Doctests require /bin/sh to pass. Tested on Linux.
 This is an alpha release. Some features are unimplemented. Expect bugs.
 
 
-[1] sh(1)
+Reference:
+
+[1] sh(1) -- http://heirloom.sourceforge.net/sh/sh.1.html
 [2] The Scheme Shell -- http://www.scsh.net/docu/html/man.html
-[4] http://tldp.org/LDP/abs/html/subshells.html
 [3] http://golang.org/src/pkg/syscall/exec_unix.go
 
 """
@@ -289,10 +286,14 @@ class Pipe(object):
     output and/or error.
     
       * capture(1) returns the last child's stdout file object
-      * capture(2) returns a rewinded temporary file object that every
+      * capture(2) returns a temporary file object that every
       child has been writing to as its stderr (when its stderr is not
-      redirected elsewhere)
+      redirected elsewhere).
       * capture(1, 2) returns a named tuple of both
+    
+    The effect of capture(2) is similar to redirecting a subshell which runs
+    the pipeline, e.g. '( (echo -n foo >&2; echo -n bar) | cat >&2 ) 2>out'.
+    This implementation does not double-fork, however.
     
     Don't forget to close the file objects!
     
