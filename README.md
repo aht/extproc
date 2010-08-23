@@ -46,7 +46,7 @@ To construct a `Pipe()`, pass in a list of Cmd's.
 run()
 =====
 
-`run()` performs a fork-exec-wait and return the child's exit status, e.g.
+`run()` performs a fork-exec-wait and return the child(ren)'s exit status(es), e.g.
 
     >>> assert 0 == Cmd('true').run()
     >>> found_deadbeaf = Pipe(Cmd('dmesg'), Cmd('grep deadbeaf')).run()

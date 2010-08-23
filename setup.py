@@ -49,7 +49,7 @@ This is an alpha release. Some features are unimplemented. Expect bugs.""".split
 
 setup(
 	name = 'pc',
-	version = '0.0.2',
+	version = '0.0.3',
 	description = __doc__[0],
 	long_description = "\n".join(__doc__[2:]),
 	author = 'Anh Hai Trinh',

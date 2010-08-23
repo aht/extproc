@@ -259,13 +259,21 @@ class Pipe(object):
     """
     Fork-exec the pipeline and wait for its termination.
     
-    Return the last child's exit status.
+    Return an array of all children's exit status.
+    
+    >>> Pipe(Sh("echo foo"), Sh("cat; echo bar"), Cmd("cat", {1: os.devnull})).run()
+    [0, 0, 0]
     """
     prev = self.cmd[0].fd[0]
     for c in self.cmd:
       c.p = subprocess.Popen(c.cmd, stdin=prev, stdout=c.fd[1], stderr=c.fd[2], cwd=c.cd, env=c.env)
       prev = c.p.stdout
-    return self.cmd[-1].p.wait()
+    for c in self.cmd:
+      c.p.wait()
+    for c in self.cmd[:-1]:
+      if c.fd[1] == PIPE:
+        c.p.stdout.close()
+    return [c.p.returncode for c in self.cmd]
   
   def spawn(self):
     """
@@ -273,6 +281,8 @@ class Pipe(object):
     
     After spawned, each self.cmd[i] will have a 'p' attribute that is
     the spawned subprocess.Popen object.
+    
+    Remember that all of [c.p.stdout for c in self.cmd] are open files.
     
     >>> yesno = Pipe(Cmd('yes'), Cmd(['grep', 'no'])).spawn()
     >>> yesno.cmd[0].p.kill()
@@ -321,6 +331,7 @@ class Pipe(object):
     temp = None
     if 2 in fd:
       self.fd[2] = tempfile.TemporaryFile()
+    ## start piping
     prev = self.cmd[0].fd[0]
     for c in self.cmd[:-1]:
       if not is_fileno(0, c.fd[0]):
@@ -329,6 +340,7 @@ class Pipe(object):
         c.fd[2] = self.fd[2]
       c.p = subprocess.Popen(c.cmd, stdin=prev, stdout=c.fd[1], stderr=c.fd[2], cwd=c.cd, env=c.env)
       prev = c.p.stdout
+    ## prepare and fork the last child
     c = self.cmd[-1]
     if not is_fileno(0, c.fd[0]):
       prev = c.fd[0]
@@ -338,8 +350,13 @@ class Pipe(object):
     if 2 in fd and is_fileno(2, c.fd[2]):
       c.fd[2] = self.fd[2]
     c.p = subprocess.Popen(c.cmd, stdin=prev, stdout=c.fd[1], stderr=c.fd[2], cwd=c.cd, env=c.env)
+    ## wait for all children
     for c in self.cmd:
       c.p.wait()
+    ## close all unneeded files
+    for c in self.cmd[:-1]:
+      if c.fd[1] == PIPE:
+        c.p.stdout.close()
     if len(fd) == 1:
       if 1 in fd and not is_fileno(2, self.fd[2]): self.fd[2].close()
       if 2 in fd and not is_fileno(1, self.fd[1]): self.fd[1].close()
