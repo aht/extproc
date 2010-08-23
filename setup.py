@@ -33,7 +33,7 @@ Design goals:
   * Easy to construct pipelines
   * Use short names for easy interactive typing
 
-In effect, make Python more usable as a system shell.
+In effect, make Python a sane alternative to non-trivial shell scripts.
 
 Technically, pc.py is a layer on top of subprocess. The subprocess
 module support a rich API but is clumsy for many common use cases,
@@ -49,7 +49,7 @@ This is an alpha release. Some features are unimplemented. Expect bugs.""".split
 
 setup(
 	name = 'pc',
-	version = '0.0.1',
+	version = '0.0.2',
 	description = __doc__[0],
 	long_description = "\n".join(__doc__[2:]),
 	author = 'Anh Hai Trinh',

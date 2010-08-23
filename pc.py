@@ -10,7 +10,7 @@ Design goals:
   * Easy to construct pipelines
   * Use short names for easy interactive typing
 
-In effect, make Python more usable as a system shell.
+In effect, make Python a sane alternative to non-trivial shell scripts.
 
 Technically, pc.py is a layer on top of subprocess. The subprocess
 module support a rich API but is clumsy for many common use cases,

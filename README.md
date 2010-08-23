@@ -11,7 +11,7 @@ Design goals:
   * Easy to construct pipelines
   * Use short names for easy interactive typing
 
-In effect, make Python more usable as a system shell.
+In effect, make Python a sane alternative to non-trivial shell scripts.
 
 Technically, pc.py is a layer on top of subprocess. The subprocess
 module support a rich API but is clumsy for many common use cases,
@@ -85,10 +85,18 @@ Capturing is equivalent to shell backquotes aka command substitution
 
     $ out=`echo -n foo`
     $ outerr=$(echo -n foo; echo -n bar 2>&1 >&2)
+    >>> Sh('echo -n foo').capture(1).stdout.read()
+    'foo'
+    >>> Sh('echo -n bar >&2').capture(2).stderr.read()
+    'bar
 
 `cmd()`, `sh()` and`pipe()` are safe shortcuts that setup the capture
-of the child(ren)'s stdout, then read and close it. For example, the
-following finds files modified in the last 30 minutes and pipes to
+of the child(ren)'s stdout, then read and close it, e,g.
+
+    >>> sh('echo -n foo')
+    'foo'
+
+The following finds files modified in the last 30 minutes and pipes to
 dmenu(1) to select a single item:
 
     >>> item = pipe(Cmd('find -mmin +30'), Cmd('dmenu'))
