@@ -1,3 +1,5 @@
+update JOBS automatically
+don't use PIPE to capture stdin
 different repr() after spawn()'ed or terminated
 support {fd: CLOSE} pre-exec
 support full I/O redirection

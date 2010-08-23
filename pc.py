@@ -383,6 +383,15 @@ def here(string):
   t.seek(0)
   return t
 
+def run(cmd, fd={}, e={}, cd=None):
+  """
+  Perform a fork-exec-wait of a Cmd and return its exit status.
+  
+  >>> run('cat /dev/null')
+  0
+  """
+  return Cmd(cmd, fd=fd, e=e, cd=cd).run()
+
 def cmd(cmd, fd={}, e={}, cd=None):
   """
   Perform a fork-exec-wait of a Cmd and return the its stdout
