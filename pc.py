@@ -54,7 +54,7 @@ JOBS = []
 
 
 def is_fileno(n, f):
-  return hasattr(f, 'fileno') and f.fileno() == n
+  return (f is n) or (hasattr(f, 'fileno') and f.fileno() == n)
 
 
 class NonZeroExit(Exception):
@@ -85,6 +85,10 @@ class Cmd(object):
     
       Whatever is pointed to by fd[0], fd[1] and fd[2] will become the
       child's stdin, stdout and stderr, respectively.
+
+      If any of key [0, 1, 2] is not specified, then it takes the
+      values [0, 1, 2] respectively -- in effect, reusing the parent's
+      [stdin, stdout, stderr].
       
       Currently, the following redirects work:
       * when v is an int: redirection of {2: 1} or {k: v} for v ≥ 3 and v is an open file descriptor
@@ -193,12 +197,12 @@ class Cmd(object):
     if not fd <= set([1, 2]):
       raise NotImplementedError("can only capture a subset of fd [1, 2] for now")
     if 1 in fd:
-      if is_fileno(1, self.fd[1]) or (self.fd[1] is 1):
+      if is_fileno(1, self.fd[1]):
         self.fd[1] = PIPE
       else:
         raise ValueError("cannot capture the child's stdout: it had been redirected to %s" % self.fd[1])
     if 2 in fd:
-      if is_fileno(2, self.fd[2]) or (self.fd[2] is 2):
+      if is_fileno(2, self.fd[2]):
         self.fd[2] = PIPE
       else:
         raise ValueError("cannot capture the child's stderr: it had been redirected to %s" % self.fd[2])
@@ -332,7 +336,7 @@ class Pipe(object):
       fd = set(fd) or set([1])
     if not fd <= set([1, 2]):
       raise NotImplementedError("can only capture a subset of fd [1, 2] for now")
-    if 1 in fd and not (is_fileno(1, self.fd[1]) or (self.fd[1] is 1)):
+    if 1 in fd and not is_fileno(1, self.fd[1]):
       raise ValueError("cannot capture the last child's stdout: it had been redirected to %s" % self.fd[1])
     temp = None
     if 2 in fd:
@@ -340,14 +344,14 @@ class Pipe(object):
       self.fd[2] = temp
     prev = self.cmd[0].fd[0]
     for c in self.cmd[:-1]:
-      if 2 in fd and (is_fileno(2, c.fd[2]) or (c.fd[2] is 2)):
+      if 2 in fd and is_fileno(2, c.fd[2]):
         c.fd[2] = temp
       c.p = subprocess.Popen(c.cmd, stdin=prev, stdout=c.fd[1], stderr=c.fd[2], cwd=c.cd, env=c.env)
       prev = c.p.stdout
     c = self.cmd[-1]
     if 1 in fd:
       c.fd[1] = PIPE
-    if 2 in fd and (is_fileno(2, c.fd[2]) or (c.fd[2] is 2)):
+    if 2 in fd and is_fileno(2, c.fd[2]):
       c.fd[2] = temp
     c.p = subprocess.Popen(c.cmd, stdin=prev, stdout=c.fd[1], stderr=c.fd[2], cwd=c.cd, env=c.env)
     c.p.wait()
