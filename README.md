@@ -34,10 +34,12 @@ Those objects hold information to prepare for a fork-exec (or for
 Pipe, a series thereof).
 
 The first argument to `Cmd()` should be a list of command argurments.
-If a string, it is passed to `shlex.split()`.  Thus, Cmd(['grep', 'my stuff'])
-and Cmd('grep "my stuff"') are equivalent.
+If a string, it is passed to `shlex.split()`.  Thus,
 
-`Sh(cmd)` is equivalent to Cmd(['/bin/sh','-c', cmd]). It is also a subclass.
+    >>> Cmd(['grep', 'my stuff']) == Cmd('grep "my stuff"')
+    True
+
+`Sh(cmd)` is equivalent to `Cmd(['/bin/sh','-c', cmd])`. It is also a subclass.
 
 To construct a `Pipe()`, pass in a list of Cmd's.
 
@@ -121,11 +123,17 @@ API REFERENCE
 See docstrings for now.
 
 
-IMPLEMENTATION NOTES
-====================
+USAGE NOTES
+===========
 
 The main interpreter process had better be a single thread, since
 forking multithreaded programs is not well understood by mortals. [3]
+
+It is not a good idea to reuse Cmd's objects.
+
+
+IMPLEMENTATION NOTES
+====================
 
 capture() use temporary files and is synchronous.  It might be worth
 adding an `async=True` option to use `PIPE` for client code that knows
@@ -140,5 +148,7 @@ REFERENCE
 =========
 
 [1] sh(1) -- http://heirloom.sourceforge.net/sh/sh.1.html
+
 [2] The Scheme Shell -- http://www.scsh.net/docu/html/man.html
+
 [3] http://golang.org/src/pkg/syscall/exec_unix.go

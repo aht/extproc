@@ -87,7 +87,10 @@ class Cmd(object):
     does not actually execute anything.
     
     >>> Cmd("/bin/sh -c 'echo foo'")
-    Cmd(['/bin/sh', '-c', 'echo foo'], cd=None, e={}, fd={0: 0, 1: 1, 2: 2})
+    Cmd(['/bin/sh', '-c', 'echo foo'], fd={0: 0, 1: 1, 2: 2}, e={}, cd=None)
+    
+    >>> Cmd(['grep', 'my stuff']) == Cmd('grep "my stuff"')
+    True
     """
     if isinstance(cmd, basestring):
       self.cmd = shlex.split(cmd)
@@ -119,9 +122,12 @@ class Cmd(object):
         raise ValueError("fd value %s is not a file, string, int, or CLOSE" % (v,))
    
   def __repr__(self):
-    return "Cmd(%s, cd=%s, e=%s, fd=%s)" % (self.cmd, self.cd, self.e, dict(
+    return "Cmd(%r, fd=%r, e=%r, cd=%r)" % (self.cmd, dict(
     			(k, v.name if isinstance(v, file) else v) for k, v in self.fd.iteritems()
-    		))
+    		), self.e, self.cd)
+  
+  def __eq__(self, other):
+    return (self.cmd == other.cmd) and (self.fd == other.fd) and (self.env == other.env) and (self.cd == other.cd)
   
   def run(self):
     """
@@ -212,9 +218,9 @@ class Sh(Cmd):
     super(Sh, self).__init__(['/bin/sh', '-c', cmd], fd=fd, e=e, cd=cd)
   
   def __repr__(self):
-    return "Sh(%s, cd=%s, e=%s, fd=%s)" % (repr(self.cmd[2]), self.cd, self.e, dict(
+    return "Sh(%r, fd=%r, e=%r, cd=%r)" % (self.cmd[2], dict(
     			(k, v.name if isinstance(v, file) else v) for k, v in self.fd.iteritems()
-    		))
+    		), self.e, self.cd)
 
 
 class Pipe(object):
@@ -226,8 +232,8 @@ class Pipe(object):
                   sub-commands, must be a keyword argument
     
     >>> Pipe(Cmd('yes'), Cmd('cat', {1: os.devnull}))
-    Pipe(Cmd(['yes'], cd=None, e={}, fd={0: 0, 1: -1, 2: 2}),
-         Cmd(['cat'], cd=None, e={}, fd={0: 0, 1: '/dev/null', 2: 2}))
+    Pipe(Cmd(['yes'], fd={0: 0, 1: -1, 2: 2}, e={}, cd=None),
+         Cmd(['cat'], fd={0: 0, 1: '/dev/null', 2: 2}, e={}, cd=None))
     """
     self.e = kwargs.get('e', {})
     self.env = os.environ.copy()
@@ -450,7 +456,7 @@ def __test():
   ValueError: cannot capture ...
   
   ### test Pipe stderr capture
-  >>> Pipe(Sh('echo -n foo; sleep 0.005; echo -n bar >&2'), Sh('cat >&2')).capture(2).stderr.read()
+  >>> Pipe(Sh('echo -n foo; sleep 0.01; echo -n bar >&2'), Sh('cat >&2')).capture(2).stderr.read()
   'foobar'
   
   ### test Pipe ENV
