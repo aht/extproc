@@ -27,34 +27,52 @@ This is an alpha release. Some features are unimplemented. Expect bugs.
 Let's start forking!
 
 
-run(), spawn() and capture()
+Cmd(), Sh() and Pipe()
 ============================
 
-`Cmd` objects hold fork-exec info and can be run(), spawn()'ed or capture()'d.
+Those objects hold information to prepare for a fork-exec (or for
+Pipe, a series thereof).
+
+The first argument to `Cmd()` should be a list of command argurments.
+If a string, it is passed to `shlex.split()`.  Thus, Cmd(['grep', 'my stuff'])
+and Cmd('grep "my stuff"') are equivalent.
+
+`Sh(cmd)` is equivalent to Cmd(['/bin/sh','-c', cmd]). It is also a subclass.
+
+To construct a `Pipe()`, pass in a list of Cmd's.
+
+run()
+=====
+
+`run()` performs a fork-exec-wait and return the child's exit status, e.g.
+
+    >>> assert 0 == Cmd('true').run()
+    >>> found_deadbeaf = Pipe(Cmd('dmesg'), Cmd('grep deadbeaf')).run()
 
 
-`Cmd.run()` performs a fork-exec-wait -- a "normal" shell's command, e.g.
+spawn()
+=======
 
-    >>> exit_status = Cmd('dmesg').run()
-
-Sh(cmd, **kwargs) is equivalent to Cmd(['/bin/sh', '-c', cmd], **kwargs), and
-run(*args, **kwargs) is equivalent to Cmd(*args, **kwargs).run().
-
-
-`Cmd.spawn()` performs a fork-exec and returns a `subprocess.Popen` object.
-The following is equivalent to a `gvim -f &` on Unix shell:
+`spawn()` performs a fork-exec and returns a `subprocess.Popen` object.
+The following is equivalent to a `gvim -f &` on Unix shells:
 
     >>> gvim = Cmd(['gvim', '-f']).spawn()
+
+You may do what you wish to the Popen object, for instance,
+
     >>> gvim.kill(15)
 
-spawn(*args, **kwargs) is equivalent to Cmd(*args, **kwargs).spawn().
 
+capture()
+=========
 
-`Cmd.captured()` also performs a fork-exec-wait but capture the
+`capture()` also performs a fork-exec-wait but capture the
 child's stdin/stderr as file objects when possible, e.g.
 
-    >>> 'foo' == Sh('echo -n foo').capture(1).stdout.read()
-    >>> 'err' == Sh('echo -n foo >&2').capture(2).stderr.read()
+    >>> Sh('echo -n foo').capture(1).stdout.read()
+    'foo'
+    >>> Sh('echo -n bar >&2').capture(2).stderr.read()
+    'bar
 
 The full return is a namedtuple `(stdin, stdout, exit_status)`, e.g.
 
@@ -66,9 +84,12 @@ Capturing is equivalent to shell backquotes aka command substitution
     $ out=`echo -n foo`
     $ outerr=$(echo -n foo; echo -n bar 2>&1 >&2)
 
-cmd(*) returns Cmd(*).capture(1).stdout.read() wrapped in a try: ... finally: close() clause.
+`cmd()`, `sh()` and`pipe()` are safe shortcuts that setup the capture
+of the child(ren)'s stdout, then read and close it. For example, the
+following finds files modified in the last 30 minutes and pipes to
+dmenu(1) to select a single item:
 
-sh(*)` returns Sh(*).capture(1).stdout.read() wrapped in a try: ... finally: close() clause.
+    >>> item = pipe(Cmd('find -mmin +30'), Cmd('dmenu'))
 
 
 I/O redirection
@@ -78,37 +99,20 @@ I/O redirections are performed by specifying a `fd` argument which
 should be a dict mapping a subset of file descriptors `[0, 1, 2]` to
 either open files, strings, or existing file descriptors, e.g.
 
-    >>> out = sh('echo -n foo; echo -n bar >&2', fd={2: 1})
+    >>> sh('echo -n foo; echo -n bar >&2', fd={2: 1})
+    'foobar'
 
 The following append the child's stdout to the file 'abc' (equiv. to `echo foo >> abc`)
 
-    >>> out = sh('echo foo', {1: open('abc', 'a')})
+    >>> sh('echo foo', {1: open('abc', 'a')})
 
 os.devnull (which is just the string `'/dev/null'` on Unix) also works:
 
-    >>> out = sh('echo bogus stuff', {1: os.devnull})
+    >>> Sh('echo ERROR >&2; echo bogus stuff', {1: os.devnull}).capture(2).stderr.read()
+    'ERROR\n'
 
 In fact you can pass in `fd=SILIENCE`, which will send everything
 straight to hell, hmm... I mean `/dev/null`.
-
-
-Pipe
-====
-
-`Pipe` are constructed by a list of Cmd's. Pipes can also be run(), spawn()'ed or capture()'d, e.g.
-
-    >>> exit_status = Pipe(Cmd('dmesg'), Cmd('grep x')).run()
-    
-    >>> out = Pipe(Cmd('dmesg'), Cmd('grep x')).capture(1).stdout.read()
-
-pipe(*args, **kwargs) returns Pipe(*args, **kwargs).capture(1).read()
-wrapped in a try: ... finally: close() clause.
-
-The following finds files modified in the last 30 minutes and pipes to
-dmenu(1) to select a single item:
-
-    >>> item = pipe(Cmd('find -mmin +30'), Cmd('dmenu'))
-
 
 
 API REFERENCE
@@ -123,9 +127,9 @@ IMPLEMENTATION NOTES
 The main interpreter process had better be a single thread, since
 forking multithreaded programs is not well understood by mortals. [3]
 
-`Cmd.capture()` and `Pipe.capture()` use temporary files and is
-synchronous.  It might be worth adding an `async=True` option to use
-`PIPE` for client code that knows what it is doing.
+capture() use temporary files and is synchronous.  It might be worth
+adding an `async=True` option to use `PIPE` for client code that knows
+what it is doing.
 
 It is really too bad that `subprocess` does not support full I/O redirection.
 
