@@ -47,7 +47,6 @@ SILENCE = {0: os.devnull, 1: os.devnull, 2: os.devnull}
 PIPE = subprocess.PIPE # should be -1
 STDOUT = subprocess.STDOUT # should be -2
 CLOSE = None
-assert CLOSE not in (PIPE, STDOUT) # should never happen
 
 JOBS = []
 

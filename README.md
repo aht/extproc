@@ -112,12 +112,12 @@ The following append the child's stdout to the file 'abc' (equiv. to `echo foo >
 
     >>> sh('echo foo', {1: open('abc', 'a')})
 
-os.devnull (which is just the string `'/dev/null'` on Unix) also works:
+`os.devnull` (which is just the string `'/dev/null'` on Unix) also works:
 
     >>> Sh('echo ERROR >&2; echo bogus stuff', {1: os.devnull}).capture(2).stderr.read()
     'ERROR\n'
 
-In fact you can pass in `fd=SILIENCE`, which will send everything
+In fact you can pass in `fd=SILENCE`, which will send everything
 straight to hell, hmm... I mean `/dev/null`.
 
 
