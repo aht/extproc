@@ -1,6 +1,8 @@
-update JOBS automatically
-don't use PIPE to capture stdin
+exec a la sh
+run code in a fork a la scsh (begin ...)
+conditional sequence, a la scsh && and ||
 different repr() after spawn()'ed or terminated
+update JOBS automatically
 support {fd: CLOSE} pre-exec
 support full I/O redirection
   * subprocess can send child's stderr to its stdout but not vice versa

@@ -69,7 +69,7 @@ class Cmd(object):
     
     :param e: a dict of *extra* enviroment variables.
     
-    :param fd: a dict mapping k in [0, 1, 2] → v of type [file, int, string, None]
+    :param fd: a dict mapping k in [0, 1, 2] → v of type [file, string, int]
     
       Whatever is pointed to by fd[0], fd[1] and fd[2] will become the
       child's stdin, stdout and stderr, respectively.
@@ -78,11 +78,10 @@ class Cmd(object):
       values [0, 1, 2] respectively -- in effect, reusing the parent's
       [stdin, stdout, stderr].
       
-      Currently, the following redirects work:
-      * when v is an int: redirection of {2: 1} or {k: v} for v ≥ 3 and v is an open file descriptor
-      * when v is a string: if it can be open()'ed with mode 'r+'
-      * when v is a file: always, and offer the most control over mode of operation
-      * when v is None: close the file descriptor k after fork, not implemented
+      The value fd[k] can be of type
+      * file: always works and offer the most control over mode of operation
+      * string: works if can be open()'ed with mode 'r' when k == 0, or mode 'w' for k in [1, 2]
+      * int: works for redirection {2: 1} or {k: v} when v ≥ 3 and v is an existing file descriptor
 
     Note that the constructor only saves information in the object and
     does not actually execute anything.
@@ -95,7 +94,7 @@ class Cmd(object):
     elif isinstance(cmd, (list, tuple)):
       self.cmd = cmd
     else:
-      raise TypeError("'cmd' must be either a string, a list or a tuple")
+      raise TypeError("'cmd' must be either of type string, list or tuple")
     self.cd = cd
     self.e = e
     self.env = os.environ.copy()
@@ -108,7 +107,7 @@ class Cmd(object):
       elif k < 0 or k >= 3:
         raise NotImplementedError("redirection {%s: %s} not supported" % (k, v))
       if isinstance(v, basestring):
-        self.fd[k] = open(v, 'r' if k == 0 else ('w' if k in (1, 2) else 'r+'))
+        self.fd[k] = open(v, 'r' if k == 0 else 'w')
       elif isinstance(v, int):
         if k == 2 and v == 1:
           self.fd[k] = STDOUT
@@ -117,7 +116,7 @@ class Cmd(object):
       elif v is CLOSE:
         raise NotImplementedError("closing is not supported")
       elif not hasattr(v, 'fileno'):
-        raise ValueError("fd value %s is not a file, int, string or None" % (v,))
+        raise ValueError("fd value %s is not a file, string, int, or CLOSE" % (v,))
    
   def __repr__(self):
     return "Cmd(%s, cd=%s, e=%s, fd=%s)" % (self.cmd, self.cd, self.e, dict(
@@ -181,12 +180,12 @@ class Cmd(object):
       raise NotImplementedError("can only capture a subset of fd [1, 2] for now")
     if 1 in fd:
       if is_fileno(1, self.fd[1]):
-        self.fd[1] = PIPE
+        self.fd[1] = tempfile.TemporaryFile()
       else:
         raise ValueError("cannot capture the child's stdout: it had been redirected to %s" % self.fd[1])
     if 2 in fd:
       if is_fileno(2, self.fd[2]):
-        self.fd[2] = PIPE
+        self.fd[2] = tempfile.TemporaryFile()
       else:
         raise ValueError("cannot capture the child's stderr: it had been redirected to %s" % self.fd[2])
     p = subprocess.Popen(self.cmd, cwd=self.cd, env=self.env, stdin=self.fd[0], stdout=self.fd[1], stderr=self.fd[2])
@@ -198,7 +197,9 @@ class Cmd(object):
         if p.stderr: p.stderr.close()
       else:
         if p.stdout: p.stdout.close()
-    return Capture(p.stdout, p.stderr, p.returncode)
+    if 1 in fd: self.fd[1].seek(0)
+    if 2 in fd: self.fd[2].seek(0)
+    return Capture(self.fd[1], self.fd[2], p.returncode)
 
 
 class Sh(Cmd):
@@ -239,7 +240,7 @@ class Pipe(object):
       c.env.update(self.e)
     for c in cmd[:-1]:
       c.fd[1] = PIPE
-    self.fd = {0: cmd[0].fd[0], 1: cmd[-1].fd[1], 2: sys.stderr}
+    self.fd = {0: cmd[0].fd[0], 1: cmd[-1].fd[1], 2: 2}
     self.cmd = cmd
   
   def __repr__(self):
@@ -309,28 +310,27 @@ class Pipe(object):
       raise ValueError("cannot capture the last child's stdout: it had been redirected to %s" % self.fd[1])
     temp = None
     if 2 in fd:
-      temp = tempfile.TemporaryFile()
-      self.fd[2] = temp
+      self.fd[2] = tempfile.TemporaryFile()
     prev = self.cmd[0].fd[0]
     for c in self.cmd[:-1]:
       if 2 in fd and is_fileno(2, c.fd[2]):
-        c.fd[2] = temp
+        c.fd[2] = self.fd[2]
       c.p = subprocess.Popen(c.cmd, stdin=prev, stdout=c.fd[1], stderr=c.fd[2], cwd=c.cd, env=c.env)
       prev = c.p.stdout
     c = self.cmd[-1]
     if 1 in fd:
-      c.fd[1] = PIPE
+      c.fd[1] = tempfile.TemporaryFile()
+      self.fd[1] = c.fd[1]
     if 2 in fd and is_fileno(2, c.fd[2]):
-      c.fd[2] = temp
+      c.fd[2] = self.fd[2]
     c.p = subprocess.Popen(c.cmd, stdin=prev, stdout=c.fd[1], stderr=c.fd[2], cwd=c.cd, env=c.env)
-    c.p.wait()
-    if temp: temp.seek(0)
+    c.p.wait() #### TODO: wait for all children
     if len(fd) == 1:
-      if 1 in fd:
-        if temp: temp.close()
-      if 2 in fd:
-        if c.p.stdout: c.p.stdout.close()
-    return Capture(c.p.stdout, temp, [c.p.poll() for c in self.cmd])
+      if 1 in fd and not is_fileno(2, self.fd[2]): self.fd[2].close()
+      if 2 in fd and not is_fileno(1, self.fd[1]): self.fd[1].close()
+    if 1 in fd: self.fd[1].seek(0)
+    if 2 in fd: self.fd[2].seek(0)
+    return Capture(self.fd[1], self.fd[2], [c.p.poll() for c in self.cmd])
 
 
 def here(string):
