@@ -221,12 +221,9 @@ class Pipe(object):
   def __init__(self, *cmd, **kwargs):
     """
     Prepare a pipeline from a list of Cmd's.
-
-    The stdins of cmd[1:] will be changed to use pipe input,
-    e.g. a pathetic pipeline such as 'echo foo | cat < file'
-    will become 'echo foo | cat'.
     
-    Extra enviroments 'e' will be exported to all sub-commands.
+    :parameter e: extra environment variables to be exported to all
+                  sub-commands, must be a keyword argument
     
     >>> Pipe(Cmd('yes'), Cmd('cat', {1: os.devnull}))
     Pipe(Cmd(['yes'], cd=None, e={}, fd={0: 0, 1: -1, 2: 2}),
@@ -239,7 +236,8 @@ class Pipe(object):
       c.e.update(self.e)
       c.env.update(self.e)
     for c in cmd[:-1]:
-      c.fd[1] = PIPE
+      if is_fileno(1, c.fd[1]):
+        c.fd[1] = PIPE
     self.fd = {0: cmd[0].fd[0], 1: cmd[-1].fd[1], 2: 2}
     self.cmd = cmd
   
@@ -313,24 +311,29 @@ class Pipe(object):
       self.fd[2] = tempfile.TemporaryFile()
     prev = self.cmd[0].fd[0]
     for c in self.cmd[:-1]:
+      if not is_fileno(0, c.fd[0]):
+        prev = c.fd[0]
       if 2 in fd and is_fileno(2, c.fd[2]):
         c.fd[2] = self.fd[2]
       c.p = subprocess.Popen(c.cmd, stdin=prev, stdout=c.fd[1], stderr=c.fd[2], cwd=c.cd, env=c.env)
       prev = c.p.stdout
     c = self.cmd[-1]
+    if not is_fileno(0, c.fd[0]):
+      prev = c.fd[0]
     if 1 in fd:
-      c.fd[1] = tempfile.TemporaryFile()
+      c.fd[1] = tempfile.TemporaryFile() ## we made sure that c.fd[1] had not been redirected before
       self.fd[1] = c.fd[1]
     if 2 in fd and is_fileno(2, c.fd[2]):
       c.fd[2] = self.fd[2]
     c.p = subprocess.Popen(c.cmd, stdin=prev, stdout=c.fd[1], stderr=c.fd[2], cwd=c.cd, env=c.env)
-    c.p.wait() #### TODO: wait for all children
+    for c in self.cmd:
+      c.p.wait()
     if len(fd) == 1:
       if 1 in fd and not is_fileno(2, self.fd[2]): self.fd[2].close()
       if 2 in fd and not is_fileno(1, self.fd[1]): self.fd[1].close()
     if 1 in fd: self.fd[1].seek(0)
     if 2 in fd: self.fd[2].seek(0)
-    return Capture(self.fd[1], self.fd[2], [c.p.poll() for c in self.cmd])
+    return Capture(self.fd[1], self.fd[2], [c.p.returncode for c in self.cmd])
 
 
 def here(string):
@@ -404,50 +407,67 @@ def spawn(cmd, fd={}, e={}, cd=None, sh=False):
 
 def __test():
   """
-  >>> out, err, status = Sh('echo -n blahblah; exit 1').capture(1)
+  ### test Cmd capture
+  >>> out, err, status = Sh('echo -n bar >&2; echo -n foo; exit 1').capture(1, 2)
   >>> out.read()
-  'blahblah'
+  'foo'
+  >>> err.read()
+  'bar'
   >>> status
   1
   
+  ### test Cmd simple {2: 1} redirection
   >>> sh('echo -n foo; echo -n bar >&2', {2: 1})
   'foobar'
   
+  ### test Cmd ENV
   >>> sh('echo -n $var', e={'var': 'foobar'})
   'foobar'
   
-  >>> sh('echo -n foo; echo -n bar >&2', {1: 2})
-  Traceback (most recent call last):
-  ...
-  NotImplementedError: redirection {1: 2} not supported
-  
+  ### test Cmd redirect {1: n}
   >>> f = tempfile.TemporaryFile()
   >>> Sh('echo -n foo', {1: f.fileno()}).run()
   0
   >>> f.seek(0); f.read()
   'foo'
   
+  ### test Cmd unsupported redirect that should really be supported
+  >>> sh('echo -n foo; echo -n bar >&2', {1: 2})
+  Traceback (most recent call last):
+  ...
+  NotImplementedError: redirection {1: 2} not supported
+  
+  ### test Cmd unsupported redirect
   >>> sh('echo -n foo; echo -n bar >&2', {5: 12})
   Traceback (most recent call last):
   ...
   NotImplementedError: redirection {5: 12} not supported
   
+  ### test Cmd impossible capture
   >>> sh("echo bogus stuff", {1: os.devnull}) #doctest: +ELLIPSIS
   Traceback (most recent call last):
   ...
   ValueError: cannot capture ...
   
+  ### test Pipe stderr capture
+  >>> Pipe(Sh('echo -n foo; sleep 0.005; echo -n bar >&2'), Sh('cat >&2')).capture(2).stderr.read()
+  'foobar'
+  
+  ### test Pipe ENV
   >>> pipe(Sh('echo -n $x'), Sh('cat; echo -n $x'), e=dict(x='foobar'))
   'foobarfoobar'
   
+  ### test Pipe impossible capture
   >>> pipe(Sh("echo bogus"), Cmd("cat", {1: os.devnull})) #doctest: +ELLIPSIS
   Traceback (most recent call last):
   ...
   ValueError: cannot capture ...
   
-  >>> Pipe(Sh('echo -n foo; sleep 0.005; echo -n bar >&2'), Sh('cat >&2')).capture(2).stderr.read()
-  'foobar'
+  ### test Pipe pathetic case
+  >>> pipe(Sh("echo -n foo"), Cmd("cat", {0: here("bar")}))
+  'bar'
   
+  ### test JOBS
   >>> Pipe(Cmd('yes'), Cmd('cat', {1: os.devnull})).spawn() #doctest: +ELLIPSIS
   Pipe(...
   >>> JOBS[-1].cmd[0].p.kill()
