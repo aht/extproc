@@ -85,10 +85,6 @@ Capturing is equivalent to shell backquotes aka command substitution
 
     $ out=`echo -n foo`
     $ outerr=$(echo -n foo; echo -n bar 2>&1 >&2)
-    >>> Sh('echo -n foo').capture(1).stdout.read()
-    'foo'
-    >>> Sh('echo -n bar >&2').capture(2).stderr.read()
-    'bar
 
 `cmd()`, `sh()` and`pipe()` are safe shortcuts that setup the capture
 of the child(ren)'s stdout, then read and close it, e,g.
