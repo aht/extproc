@@ -56,6 +56,9 @@ Capture = collections.namedtuple("Capture", "stdout stderr exit_status")
 def is_fileno(n, f):
   return (f is n) or (hasattr(f, 'fileno') and f.fileno() == n)
 
+def name_or_self(f):
+  return (hasattr(f, 'name') and f.name) or f
+
 
 class Cmd(object):
   def __init__(self, cmd, fd={}, e={}, cd=None):
@@ -123,7 +126,7 @@ class Cmd(object):
    
   def __repr__(self):
     return "Cmd(%r, fd=%r, e=%r, cd=%r)" % (self.cmd, dict(
-    			(k, v.name if isinstance(v, file) else v) for k, v in self.fd.iteritems()
+    			(k, name_or_self(v)) for k, v in self.fd.iteritems()
     		), self.e, self.cd)
   
   def __eq__(self, other):
@@ -188,12 +191,14 @@ class Cmd(object):
       if is_fileno(1, self.fd[1]):
         self.fd[1] = tempfile.TemporaryFile()
       else:
-        raise ValueError("cannot capture the child's stdout: it had been redirected to %s" % self.fd[1])
+        raise ValueError("cannot capture the child's stdout: it had been redirected to %r"
+        		% name_or_self(self.fd[1]))
     if 2 in fd:
       if is_fileno(2, self.fd[2]):
         self.fd[2] = tempfile.TemporaryFile()
       else:
-        raise ValueError("cannot capture the child's stderr: it had been redirected to %s" % self.fd[2])
+        raise ValueError("cannot capture the child's stderr: it had been redirected to %r"
+        		% name_or_self(self.fd[2]))
     p = subprocess.Popen(self.cmd, cwd=self.cd, env=self.env, stdin=self.fd[0], stdout=self.fd[1], stderr=self.fd[2])
     if p.stdin:
       p.stdin.close()
@@ -219,7 +224,7 @@ class Sh(Cmd):
   
   def __repr__(self):
     return "Sh(%r, fd=%r, e=%r, cd=%r)" % (self.cmd[2], dict(
-    			(k, v.name if isinstance(v, file) else v) for k, v in self.fd.iteritems()
+    			(k, name_or_self(v)) for k, v in self.fd.iteritems()
     		), self.e, self.cd)
 
 
@@ -311,7 +316,8 @@ class Pipe(object):
     if not fd <= set([1, 2]):
       raise NotImplementedError("can only capture a subset of fd [1, 2] for now")
     if 1 in fd and not is_fileno(1, self.fd[1]):
-      raise ValueError("cannot capture the last child's stdout: it had been redirected to %s" % self.fd[1])
+      raise ValueError("cannot capture the last child's stdout: it had been redirected to %r"
+      		% name_or_self(self.fd[1]))
     temp = None
     if 2 in fd:
       self.fd[2] = tempfile.TemporaryFile()
