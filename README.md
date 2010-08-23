@@ -21,7 +21,7 @@ all of which is trivial to do on system shells. [1][2]
 This module depends on Python 2.6, or where `subprocess` is available.
 Doctests require `/bin/sh` to pass. Tested on Linux.
 
-This is an alpha release. Some features are unimplemented. Expect bugs.
+This is an alpha release. Expect bugs.
 
 
 Let's start forking!
