@@ -34,7 +34,6 @@ Reference:
 
 """
 
-
 import collections
 import os
 import shlex
@@ -42,9 +41,9 @@ import subprocess
 import sys
 import tempfile
 
-
 DEFAULT_FD = {0: 0, 1: 1, 2: 2}
 SILENCE = {0: os.devnull, 1: os.devnull, 2: os.devnull}
+
 PIPE = subprocess.PIPE # should be -1
 STDOUT = subprocess.STDOUT # should be -2
 CLOSE = None
@@ -52,21 +51,10 @@ assert CLOSE not in (PIPE, STDOUT) # should never happen
 
 JOBS = []
 
+Capture = collections.namedtuple("Capture", "stdout stderr exit_status")
 
 def is_fileno(n, f):
   return (f is n) or (hasattr(f, 'fileno') and f.fileno() == n)
-
-
-class NonZeroExit(Exception):
-  def __init__(self, exit_status):
-    self.exit_status = exit_status
-  def __str__(self):
-    if self.exit_status > 0:
-      return "child exited with status %s" % (self.exit_status)
-    else:
-      return "child terminated by signal %s" % (-self.exit_status)
-
-Capture = collections.namedtuple("Capture", "stdout stderr")
 
 
 class Cmd(object):
@@ -160,36 +148,31 @@ class Cmd(object):
   def capture(self, *fd):
     """
     Fork-exec the Cmd and wait for its termination, capturing the
-    output and/or error:
+    output and/or error.
     
-      * capture(1) returns the child's stdout file object
-      * capture(2) returns the child's stderr file object
-      * capture(1, 2) returns a named tuple of both
-    
+    :param fd: a list of file descriptors to capture, should be a subset of [1, 2] where
+      * 1 represents the child's stdout
+      * 2 represents the child's stderr
+
+    Return a namedtuple (stdout, stderr, exit_status) where
+    stdout and stderr are captured file objects or None.
+
     Don't forget to close the file objects!
     
-    Note that only the fds that reuse the parent's stdout/stderr (when
-    it had not been redirected them elsewhere) can be captured.
-
-    Raise NonZeroExit if the child's exit status != 0.  The error
-    object contains 'stdout' and/or 'stderr' attributes that were
-    captured from it before termination.
-    
-    >>> Cmd("/bin/sh -c 'echo -n foo'").capture().read()
-    'foo'
-   
-    >>> Cmd("/bin/sh -c 'echo -n foo'").capture(1).read()
+    >>> Cmd("/bin/sh -c 'echo -n foo'").capture(1).stdout.read()
     'foo'
     
-    >>> Cmd("/bin/sh -c 'echo -n bar >&2'").capture(2).read()
+    >>> Cmd("/bin/sh -c 'echo -n bar >&2'").capture(2).stderr.read()
     'bar'
     
-    >>> cout, cerr = Cmd("/bin/sh -c 'echo -n foo; echo -n bar >&2'").capture(1, 2)
+    >>> cout, cerr, status = Cmd("/bin/sh -c 'echo -n foo; echo -n bar >&2'").capture(1, 2)
     >>> cout.read()
     'foo'
     >>> cerr.read()
     'bar'
     """
+    if not fd:
+      raise ValueError("what do you want to capture?")
     if isinstance(fd, int):
       fd = set([fd])
     else:
@@ -209,23 +192,13 @@ class Cmd(object):
     p = subprocess.Popen(self.cmd, cwd=self.cd, env=self.env, stdin=self.fd[0], stdout=self.fd[1], stderr=self.fd[2])
     if p.stdin:
       p.stdin.close()
-    if p.wait() != 0:
-      ex = NonZeroExit(p.returncode)
-      if 1 in fd: ex.stdout = p.stdout
-      if 2 in fd: ex.stderr = p.stderr
-      try:
-        raise ex
-      finally:
-        if p.stdout: p.stdout.close()
-        if p.stderr: p.stderr.close()
+    p.wait()
     if len(fd) == 1:
       if 1 in fd:
         if p.stderr: p.stderr.close()
-        return p.stdout
       else:
         if p.stdout: p.stdout.close()
-        return p.stderr
-    return Capture(p.stdout, p.stderr)
+    return Capture(p.stdout, p.stderr, p.returncode)
 
 
 class Sh(Cmd):
@@ -308,28 +281,24 @@ class Pipe(object):
     Fork-exec the Cmd and wait for its termination, capturing the
     output and/or error.
     
-      * capture(1) returns the last child's stdout file object
-      * capture(2) returns a temporary file object that every
-      child has been writing to as its stderr (when its stderr is not
-      redirected elsewhere).
-      * capture(1, 2) returns a named tuple of both
+    :param fd: a list of file descriptors to capture, should be a subset of [1, 2] where
+      * 1 represents what the children would have written to the parent's stdout
+      * 2 represents what the children would have written to the parent's stderr
     
-    The effect of capture(2) is similar to redirecting a subshell which runs
-    the pipeline, e.g. '( (echo -n foo >&2; echo -n bar) | cat >&2 ) 2>out'.
-    This implementation does not double-fork, however.
+    Return a namedtuple (stdout, stderr, exit_status) where stdout and
+    stderr are captured file objects or None and exit_status is a list
+    of all children's exit statuses.
     
     Don't forget to close the file objects!
     
-    Raise NonZeroExit if the last child's exit status != 0.  The error
-    object contains 'stdout' and/or 'stderr' attributes that were
-    captured from it before termination.
-    
-    >>> Pipe(Sh('echo -n foo; echo -n bar >&2', {2: os.devnull}), Cmd('cat')).capture().read()
+    >>> Pipe(Sh('echo -n foo; echo -n bar >&2', {2: os.devnull}), Cmd('cat')).capture(1).stdout.read()
     'foo'
     
-    >>> Pipe(Sh('echo -n foo; echo -n bar >&2'), Cmd('cat', {1: os.devnull})).capture(2).read()
+    >>> Pipe(Sh('echo -n foo; echo -n bar >&2'), Cmd('cat', {1: os.devnull})).capture(2).stderr.read()
     'bar'
     """
+    if not fd:
+      raise ValueError("what do you want to capture?")
     if isinstance(fd, int):
       fd = set([fd])
     else:
@@ -356,23 +325,12 @@ class Pipe(object):
     c.p = subprocess.Popen(c.cmd, stdin=prev, stdout=c.fd[1], stderr=c.fd[2], cwd=c.cd, env=c.env)
     c.p.wait()
     if temp: temp.seek(0)
-    if c.p.returncode != 0:
-      ex = NonZeroExit(c.p.returncode)
-      if 1 in fd: ex.stdout = c.p.stdout
-      if 2 in fd: ex.stderr = temp
-      try:
-        raise ex
-      finally:
-        if c.p.stdout: c.p.stdout.close()
-        if temp: temp.close()
     if len(fd) == 1:
       if 1 in fd:
         if temp: temp.close()
-        return c.p.stdout
       if 2 in fd:
         if c.p.stdout: c.p.stdout.close()
-        return temp
-    return Capture(c.p.stdout, temp)
+    return Capture(c.p.stdout, temp, [c.p.poll() for c in self.cmd])
 
 
 def here(string):
@@ -404,7 +362,7 @@ def cmd(cmd, fd={}, e={}, cd=None):
   >>> cmd(['/bin/sh', '-c', 'echo -n foo; echo -n bar >&2'], {2: 1})
   'foobar'
   """
-  f = Cmd(cmd, fd=fd, e=e, cd=cd).capture(1)
+  f = Cmd(cmd, fd=fd, e=e, cd=cd).capture(1).stdout
   try:
     s = f.read()
   finally:
@@ -419,7 +377,7 @@ def sh(cmd, fd={}, e={}, cd=None):
   >>> sh('echo -n foo >&2', {2: 1})
   'foo'
   """
-  f = Sh(cmd, fd=fd, e=e, cd=cd).capture(1)
+  f = Sh(cmd, fd=fd, e=e, cd=cd).capture(1).stdout
   try:
     s = f.read()
   finally:
@@ -430,7 +388,7 @@ def pipe(*cmds, **kwargs):
   """
   Run the pipeline with given Cmd's, then returns its stdout as a byte string.
   """
-  f = Pipe(*cmds, **kwargs).capture(1)
+  f = Pipe(*cmds, **kwargs).capture(1).stdout
   try:
     s = f.read()
   finally:
@@ -446,6 +404,12 @@ def spawn(cmd, fd={}, e={}, cd=None, sh=False):
 
 def __test():
   """
+  >>> out, err, status = Sh('echo -n blahblah; exit 1').capture(1)
+  >>> out.read()
+  'blahblah'
+  >>> status
+  1
+  
   >>> sh('echo -n foo; echo -n bar >&2', {2: 1})
   'foobar'
   
@@ -481,7 +445,7 @@ def __test():
   ...
   ValueError: cannot capture ...
   
-  >>> Pipe(Sh('echo -n foo; sleep 0.005; echo -n bar >&2'), Sh('cat >&2')).capture(2).read()
+  >>> Pipe(Sh('echo -n foo; sleep 0.005; echo -n bar >&2'), Sh('cat >&2')).capture(2).stderr.read()
   'foobar'
   
   >>> Pipe(Cmd('yes'), Cmd('cat', {1: os.devnull})).spawn() #doctest: +ELLIPSIS
