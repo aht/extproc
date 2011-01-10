@@ -53,7 +53,7 @@ JOBS = []
 
 Capture = collections.namedtuple("Capture", "stdout stderr exit_status")
 
-def is_fileno(n, f):
+def _is_fileno(n, f):
   return (f is n) or (hasattr(f, 'fileno') and f.fileno() == n)
 
 def name_or_self(f):
@@ -188,13 +188,13 @@ class Cmd(object):
     if not fd <= set([1, 2]):
       raise NotImplementedError("can only capture a subset of fd [1, 2] for now")
     if 1 in fd:
-      if is_fileno(1, self.fd[1]):
+      if _is_fileno(1, self.fd[1]):
         self.fd[1] = tempfile.TemporaryFile()
       else:
         raise ValueError("cannot capture the child's stdout: it had been redirected to %r"
         		% name_or_self(self.fd[1]))
     if 2 in fd:
-      if is_fileno(2, self.fd[2]):
+      if _is_fileno(2, self.fd[2]):
         self.fd[2] = tempfile.TemporaryFile()
       else:
         raise ValueError("cannot capture the child's stderr: it had been redirected to %r"
@@ -247,7 +247,7 @@ class Pipe(object):
       c.e.update(self.e)
       c.env.update(self.e)
     for c in cmd[:-1]:
-      if is_fileno(1, c.fd[1]):
+      if _is_fileno(1, c.fd[1]):
         c.fd[1] = PIPE
     self.fd = {0: cmd[0].fd[0], 1: cmd[-1].fd[1], 2: 2}
     self.cmd = cmd
@@ -325,7 +325,7 @@ class Pipe(object):
       fd = set(fd) or set([1])
     if not fd <= set([1, 2]):
       raise NotImplementedError("can only capture a subset of fd [1, 2] for now")
-    if 1 in fd and not is_fileno(1, self.fd[1]):
+    if 1 in fd and not _is_fileno(1, self.fd[1]):
       raise ValueError("cannot capture the last child's stdout: it had been redirected to %r"
       		% name_or_self(self.fd[1]))
     temp = None
@@ -334,20 +334,20 @@ class Pipe(object):
     ## start piping
     prev = self.cmd[0].fd[0]
     for c in self.cmd[:-1]:
-      if not is_fileno(0, c.fd[0]):
+      if not _is_fileno(0, c.fd[0]):
         prev = c.fd[0]
-      if 2 in fd and is_fileno(2, c.fd[2]):
+      if 2 in fd and _is_fileno(2, c.fd[2]):
         c.fd[2] = self.fd[2]
       c.p = subprocess.Popen(c.cmd, stdin=prev, stdout=c.fd[1], stderr=c.fd[2], cwd=c.cd, env=c.env)
       prev = c.p.stdout
     ## prepare and fork the last child
     c = self.cmd[-1]
-    if not is_fileno(0, c.fd[0]):
+    if not _is_fileno(0, c.fd[0]):
       prev = c.fd[0]
     if 1 in fd:
       c.fd[1] = tempfile.TemporaryFile() ## we made sure that c.fd[1] had not been redirected before
       self.fd[1] = c.fd[1]
-    if 2 in fd and is_fileno(2, c.fd[2]):
+    if 2 in fd and _is_fileno(2, c.fd[2]):
       c.fd[2] = self.fd[2]
     c.p = subprocess.Popen(c.cmd, stdin=prev, stdout=c.fd[1], stderr=c.fd[2], cwd=c.cd, env=c.env)
     ## wait for all children
@@ -358,8 +358,8 @@ class Pipe(object):
       if c.fd[1] == PIPE:
         c.p.stdout.close()
     if len(fd) == 1:
-      if 1 in fd and not is_fileno(2, self.fd[2]): self.fd[2].close()
-      if 2 in fd and not is_fileno(1, self.fd[1]): self.fd[1].close()
+      if 1 in fd and not _is_fileno(2, self.fd[2]): self.fd[2].close()
+      if 2 in fd and not _is_fileno(1, self.fd[1]): self.fd[1].close()
     if 1 in fd: self.fd[1].seek(0)
     if 2 in fd: self.fd[2].seek(0)
     return Capture(self.fd[1], self.fd[2], [c.p.returncode for c in self.cmd])
