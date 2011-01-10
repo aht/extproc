@@ -1,3 +1,4 @@
+* close the here temp files !!!
 * accept a string as argument for pipe() and use shlex.split() to parse
 * exec a la sh
 * run code in a fork a la scsh (begin ...)
