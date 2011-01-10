@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2
 
 import os
 import sys
@@ -9,7 +9,7 @@ __dir__ = os.path.realpath(os.path.dirname(__file__))
 
 sys.path.insert(0, __dir__)
 try:
-    import pc
+    import extproc
 finally:
     del sys.path[0]
 
@@ -23,9 +23,9 @@ Topic :: Software Development :: Libraries :: Python Modules
 Topic :: Utilities
 """
 
-__doc__ = """process control -- easy fork-exec and pipe with I/O redirection
+__doc__ = """extproc -- easy fork-exec and pipe with I/O redirection
 
-pc.py is a layer on top of subprocess. The subprocess module supports
+extproc is a layer on top of subprocess. The subprocess module supports
 a rich API but is clumsy for many common use cases, namely sync/async
 fork-exec, command substitution and pipelining, all of which is trivial
 to do on system shells.
@@ -40,7 +40,7 @@ Features:
   * Easy to construct pipelines
   * Use short names for easy interactive typing
 
-Documentation is at <http://github.com/aht/pc.py/>.
+Documentation is at <http://github.com/aht/extproc/>.
 
 This module depends on Python 2.6, or where subprocess is available.
 Doctests require /bin/sh to pass. Tested on Linux.
@@ -48,15 +48,15 @@ Doctests require /bin/sh to pass. Tested on Linux.
 This is an alpha release. Expect bugs.""".split('\n')
 
 setup(
-	name = 'pc',
+	name = 'extproc',
 	version = '0.0.3',
 	description = __doc__[0],
 	long_description = "\n".join(__doc__[2:]),
 	author = 'Anh Hai Trinh',
 	author_email = 'moc.liamg@hnirt.iah.hna:otliam'[::-1],
 	keywords='fork exec pipe IO redirection',
-	url = 'http://github.com/aht/pc.py',
+	url = 'http://github.com/aht/extproc/',
 	platforms=['any'],
 	classifiers=filter(None, classifiers.split("\n")),
-	py_modules = ['pc']
+	py_modules = ['extproc']
 )

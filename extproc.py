@@ -1,9 +1,9 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2
 #-*- coding: utf-8 -*-
 """
-process control: fork-exec and pipe with I/O redirection
+extproc: fork-exec and pipe with I/O redirection
 
-pc.py is a layer on top of subprocess. The subprocess module supports
+extproc is a layer on top of subprocess. The subprocess module supports
 a rich API but is clumsy for many common use cases, namely sync/async
 fork-exec, command substitution and pipelining, all of which is trivial
 to do on system shells. [1][2]
