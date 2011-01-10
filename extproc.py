@@ -436,6 +436,12 @@ def spawn(cmd, fd={}, e={}, cd=None, sh=False):
 
 def __test():
   """
+  ### test sanity
+  >>> run('/bin/true')
+  0
+  >>> run('/bin/false')
+  1
+  
   ### test Cmd capture
   >>> out, err, status = Sh('echo -n bar >&2; echo -n foo; exit 1').capture(1, 2)
   >>> out.read()

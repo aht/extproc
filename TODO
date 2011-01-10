@@ -1,11 +1,11 @@
-accept a string as argument for pipe() and use shlex.split() to parse
-exec a la sh
-run code in a fork a la scsh (begin ...)
-conditional sequence, a la scsh && and ||
-different repr() after spawn()'ed or terminated
-update JOBS automatically
-support {fd: CLOSE} pre-exec
-support full I/O redirection
-  * subprocess can send child's stderr to its stdout but not vice versa
-  * subprocess does not dup(3) higher fd out of the box pre-exec,
+* accept a string as argument for pipe() and use shlex.split() to parse
+* exec a la sh
+* run code in a fork a la scsh (begin ...)
+* sequence, a la scsh && and ||
+* different repr() after spawn()'ed or terminated
+* remove finished JOBS
+* support {fd: CLOSE} pre-exec
+* support full I/O redirection
+  + subprocess can send child's stderr to its stdout but not vice versa
+  + subprocess does not dup(3) higher fd out of the box pre-exec,
   fortunately this won't have any effect unless the child use fdopen(3).

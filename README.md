@@ -1,4 +1,4 @@
-process control -- fork-exec and pipe with I/O redirection
+extproc -- fork-exec and pipe with I/O redirection
 
 Introduction
 ============
@@ -13,7 +13,7 @@ Design goals:
 
 In effect, make Python a sane alternative to non-trivial shell scripts.
 
-Technically, pc.py is a layer on top of subprocess. The subprocess
+Technically, extproc is a layer on top of subprocess. The subprocess
 module support a rich API but is clumsy for many common use cases,
 namely sync/async fork-exec, command substitution and pipelining,
 all of which is trivial to do on system shells. [1][2]
@@ -30,7 +30,7 @@ Let's start forking!
 Cmd(), Sh() and Pipe()
 ============================
 
-Those objects hold information to prepare for a fork-exec (or for
+Those objects hold information to prepare for a fork-exec (or in case of
 Pipe, a series thereof).
 
 The first argument to `Cmd()` should be a list of command argurments.
@@ -48,9 +48,12 @@ run()
 
 `run()` performs a fork-exec-wait and return the child(ren)'s exit status(es), e.g.
 
-    >>> assert 0 == Cmd('true').run()
+    >>> assert Cmd('/bin/true').run() == 0
     >>> found_deadbeaf = Pipe(Cmd('dmesg'), Cmd('grep deadbeaf')).run()
 
+'extproc.run' is a shorthand function:
+
+   >>> assert run('/bin/false') == 1
 
 spawn()
 =======
@@ -63,7 +66,6 @@ The following is equivalent to a `gvim -f &` on Unix shells:
 You may do what you wish to the Popen object, for instance,
 
     >>> gvim.kill(15)
-
 
 capture()
 =========
@@ -81,12 +83,12 @@ The full return is a namedtuple `(stdin, stdout, exit_status)`, e.g.
     >>> out, err, status = Sh('echo -n foo; echo -n bar >&2').capture(1, 2)
 
 Capturing is equivalent to shell backquotes aka command substitution
-(which cannot capture stderr separate from stdout):
+(but sh cannot capture stderr separate from stdout):
 
     $ out=`echo -n foo`
     $ outerr=$(echo -n foo; echo -n bar 2>&1 >&2)
 
-`cmd()`, `sh()` and`pipe()` are safe shortcuts that setup the capture
+`extproc.cmd`, `extproc.sh` and `extproc.pipe` are safe shortcuts that setup the capture
 of the child(ren)'s stdout, then read and close it, e,g.
 
     >>> sh('echo -n foo')
@@ -114,8 +116,8 @@ The following append the child's stdout to the file 'abc' (equiv. to `echo foo >
 
 `os.devnull` (which is just the string `'/dev/null'` on Unix) also works:
 
-    >>> Sh('echo ERROR >&2; echo bogus stuff', {1: os.devnull}).capture(2).stderr.read()
-    'ERROR\n'
+    >>> Sh('echo -n ERROR >&2; echo bogus stuff', {1: os.devnull}).capture(2).stderr.read()
+    'ERROR'
 
 In fact you can pass in `fd=SILENCE`, which will send everything
 straight to hell, hmm... I mean `/dev/null`.
