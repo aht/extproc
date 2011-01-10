@@ -51,9 +51,9 @@ run()
     >>> assert Cmd('/bin/true').run() == 0
     >>> found_deadbeaf = Pipe(Cmd('dmesg'), Cmd('grep deadbeaf')).run()
 
-'extproc.run' is a shorthand function:
+`extproc.run` is a shorthand function:
 
-   >>> assert run('/bin/false') == 1
+    >>> assert run('/bin/false') == 1
 
 spawn()
 =======
