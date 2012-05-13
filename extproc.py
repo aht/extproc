@@ -125,12 +125,13 @@ class Cmd(object):
         raise ValueError("fd value %s is not a file, string, int, or CLOSE" % (v,))
    
   def __repr__(self):
-    return "Cmd(%r, fd=%r, e=%r, cd=%r)" % (self.cmd, dict(
-    			(k, _name_or_self(v)) for k, v in self.fd.iteritems()
-    		), self.e, self.cd)
+    return "Cmd(%r, fd=%r, e=%r, cd=%r)" % (
+      self.cmd, dict((k, _name_or_self(v)) for k, v in self.fd.iteritems()),
+      self.e, self.cd)
   
   def __eq__(self, other):
-    return (self.cmd == other.cmd) and (self.fd == other.fd) and (self.env == other.env) and (self.cd == other.cd)
+    return (self.cmd == other.cmd) and (self.fd == other.fd) and\
+           (self.env == other.env) and (self.cd == other.cd)
   
   def run(self):
     """
@@ -141,7 +142,7 @@ class Cmd(object):
     >>> Cmd(['/bin/sh', '-c', 'exit 1']).run()
     1
     """
-    return subprocess.call(self.cmd, cwd=self.cd, env=self.env, stdin=self.fd[0], stdout=self.fd[1], stderr=self.fd[2])
+    return subprocess.call(**self.popen_args)
   
   def spawn(self):
     """
@@ -149,7 +150,9 @@ class Cmd(object):
     
     Return a subprocess.Popen object (which is also stored in 'self.p')
     """
-    self.p = subprocess.Popen(self.cmd, cwd=self.cd, env=self.env, stdin=self.fd[0], stdout=self.fd[1], stderr=self.fd[2])
+    self.p = subprocess.Popen(**self.popen_args)
+      #self.cmd, cwd=self.cd, env=self.env,
+      #stdin=self.fd[0], stdout=self.fd[1], stderr=self.fd[2])
     JOBS.append(self)
     return self.p
   
@@ -199,7 +202,7 @@ class Cmd(object):
       else:
         raise ValueError("cannot capture the child's stderr: it had been redirected to %r"
         		% _name_or_self(self.fd[2]))
-    p = subprocess.Popen(self.cmd, cwd=self.cd, env=self.env, stdin=self.fd[0], stdout=self.fd[1], stderr=self.fd[2])
+    p = subprocess.Popen(**self.popen_args)
     if p.stdin:
       p.stdin.close()
     p.wait()
@@ -211,6 +214,11 @@ class Cmd(object):
     if 1 in fd: self.fd[1].seek(0)
     if 2 in fd: self.fd[2].seek(0)
     return Capture(self.fd[1], self.fd[2], p.returncode)
+
+  @property
+  def popen_args(self):
+    return dict(args=self.cmd, cwd=self.cd, env=self.env,
+    stdin=self.fd[0], stdout=self.fd[1], stderr=self.fd[2])
 
 
 class Sh(Cmd):
@@ -266,7 +274,11 @@ class Pipe(object):
     """
     prev = self.cmd[0].fd[0]
     for c in self.cmd:
-      c.p = subprocess.Popen(c.cmd, stdin=prev, stdout=c.fd[1], stderr=c.fd[2], cwd=c.cd, env=c.env)
+      basic_popen_args = c.popen_args
+      basic_popen_args['stdin']=prev
+      c.p = subprocess.Popen(**basic_popen_args)
+
+      #c.cmd, stdin=prev, stdout=c.fd[1], stderr=c.fd[2], cwd=c.cd, env=c.env)
       prev = c.p.stdout
     for c in self.cmd:
       c.p.wait()
