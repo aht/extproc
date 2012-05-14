@@ -109,22 +109,29 @@ class Cmd(object):
     self.env.update(e)
     self.fd = DEFAULT_FD.copy()
     self.fd.update(fd)
-    for k, v in fd.iteritems():
-      if not isinstance(k, int):
-        raise TypeError("fd keys must have type int")
-      elif k < 0 or k >= 3:
-        raise NotImplementedError("redirection {%s: %s} not supported" % (k, v))
-      if isinstance(v, basestring):
-        self.fd[k] = open(v, 'r' if k == 0 else 'w')
-      elif isinstance(v, int):
-        if k == 2 and v == 1:
-          self.fd[k] = STDOUT
-        elif (v in (0, 1, 2)):
-          raise NotImplementedError("redirection {%s: %s} not supported" % (k, v))
-      elif v is CLOSE:
+
+    for stream_num in fd.keys():
+        if not isinstance(stream_num, int):
+            raise TypeError("fd keys must have type int")
+        elif stream_num < 0 or stream_num >= 3:
+          fd_num = fd[stream_num]
+          raise NotImplementedError(
+            "redirection {%s: %s} not supported" % (stream_num, fd_num))
+
+    for stream_num, fd_num in fd.iteritems():
+      if isinstance(fd_num, basestring):
+        self.fd[stream_num] = open(fd_num, 'r' if stream_num == 0 else 'w')
+      elif isinstance(fd_num, int):
+        if stream_num == 2 and fd_num == 1:
+          self.fd[STDERR] = STDOUT
+        elif (fd_num in (0, 1, 2)):
+          raise NotImplementedError(
+            "redirection {%s: %s} not supported" % (stream_num, fd_num))
+      elif stream_num is CLOSE:
         raise NotImplementedError("closing is not supported")
-      elif not hasattr(v, 'fileno'):
-        raise ValueError("fd value %s is not a file, string, int, or CLOSE" % (v,))
+      elif not hasattr(fd_num, 'fileno'):
+        raise ValueError(
+          "fd value %s is not a file, string, int, or CLOSE" % (fd_num,))
    
   def __repr__(self):
     return "Cmd(%r, fd=%r, e=%r, cd=%r)" % (
