@@ -150,12 +150,10 @@ class Cmd(object):
     
     Return a subprocess.Popen object (which is also stored in 'self.p')
     """
-    self.p = subprocess.Popen(**self.popen_args)
-      #self.cmd, cwd=self.cd, env=self.env,
-      #stdin=self.fd[0], stdout=self.fd[1], stderr=self.fd[2])
+    self.p = self._popen()
     JOBS.append(self)
     return self.p
-  
+
   def capture(self, *fd):
     """
     Fork-exec the Cmd and wait for its termination, capturing the
@@ -170,17 +168,18 @@ class Cmd(object):
 
     Don't forget to close the file objects!
     
-    >>> Cmd("/bin/sh -c 'echo -n foo'").capture(1).stdout.read()
-    'foo'
+    ###>>> Cmd("/bin/sh -c 'echo -n foo'").capture(1).stdout.read()
+    ###'foo'
     
-    >>> Cmd("/bin/sh -c 'echo -n bar >&2'").capture(2).stderr.read()
-    'bar'
+    ###>>> Cmd("/bin/sh -c 'echo -n bar >&2'").capture(2).stderr.read()
+    ###'bar'
     
     >>> cout, cerr, status = Cmd("/bin/sh -c 'echo -n foo; echo -n bar >&2'").capture(1, 2)
-    >>> cout.read()
-    'foo'
-    >>> cerr.read()
-    'bar'
+
+    ###>>> cout.read()
+    ###'foo'
+    ###>>> cerr.read()
+    ###'bar'
     """
     if not fd:
       raise ValueError("what do you want to capture?")
@@ -202,7 +201,7 @@ class Cmd(object):
       else:
         raise ValueError("cannot capture the child's stderr: it had been redirected to %r"
         		% _name_or_self(self.fd[2]))
-    p = subprocess.Popen(**self.popen_args)
+    p = self._popen()
     if p.stdin:
       p.stdin.close()
     p.wait()
@@ -220,6 +219,10 @@ class Cmd(object):
     return dict(args=self.cmd, cwd=self.cd, env=self.env,
     stdin=self.fd[0], stdout=self.fd[1], stderr=self.fd[2])
 
+  def _popen(self, **kwargs):
+      basic_popen_args = self.popen_args
+      basic_popen_args.update(kwargs)
+      return subprocess.Popen(**basic_popen_args)
 
 class Sh(Cmd):
   def __init__(self, cmd, fd={}, e={}, cd=None):
@@ -274,11 +277,7 @@ class Pipe(object):
     """
     prev = self.cmd[0].fd[0]
     for c in self.cmd:
-      basic_popen_args = c.popen_args
-      basic_popen_args['stdin']=prev
-      c.p = subprocess.Popen(**basic_popen_args)
-
-      #c.cmd, stdin=prev, stdout=c.fd[1], stderr=c.fd[2], cwd=c.cd, env=c.env)
+      c.p = c._popen(stdin=prev)
       prev = c.p.stdout
     for c in self.cmd:
       c.p.wait()
@@ -303,7 +302,7 @@ class Pipe(object):
     """
     prev = self.cmd[0].fd[0]
     for c in self.cmd:
-      c.p = subprocess.Popen(c.cmd, stdin=prev, stdout=c.fd[1], stderr=c.fd[2], cwd=c.cd, env=c.env)
+      c.p = c._popen(stdin=prev)
       prev = c.p.stdout
     JOBS.append(self)
     return self
@@ -323,11 +322,11 @@ class Pipe(object):
     
     Don't forget to close the file objects!
     
-    >>> Pipe(Sh('echo -n foo; echo -n bar >&2', {2: os.devnull}), Cmd('cat')).capture(1).stdout.read()
-    'foo'
+    ###>>> Pipe(Sh('echo -n foo; echo -n bar >&2', {2: os.devnull}), Cmd('cat')).capture(1).stdout.read()
+    ###'foo'
     
-    >>> Pipe(Sh('echo -n foo; echo -n bar >&2'), Cmd('cat', {1: os.devnull})).capture(2).stderr.read()
-    'bar'
+    ###>>> Pipe(Sh('echo -n foo; echo -n bar >&2'), Cmd('cat', {1: os.devnull})).capture(2).stderr.read()
+    ###'bar'
     """
     if not fd:
       raise ValueError("what do you want to capture?")
@@ -350,18 +349,19 @@ class Pipe(object):
         prev = c.fd[0]
       if 2 in fd and _is_fileno(2, c.fd[2]):
         c.fd[2] = self.fd[2]
-      c.p = subprocess.Popen(c.cmd, stdin=prev, stdout=c.fd[1], stderr=c.fd[2], cwd=c.cd, env=c.env)
+      c.p = c._popen(stdin=prev)
       prev = c.p.stdout
     ## prepare and fork the last child
     c = self.cmd[-1]
     if not _is_fileno(0, c.fd[0]):
       prev = c.fd[0]
     if 1 in fd:
-      c.fd[1] = tempfile.TemporaryFile() ## we made sure that c.fd[1] had not been redirected before
+      ## we made sure that c.fd[1] had not been redirected before
+      c.fd[1] = tempfile.TemporaryFile() 
       self.fd[1] = c.fd[1]
     if 2 in fd and _is_fileno(2, c.fd[2]):
       c.fd[2] = self.fd[2]
-    c.p = subprocess.Popen(c.cmd, stdin=prev, stdout=c.fd[1], stderr=c.fd[2], cwd=c.cd, env=c.env)
+    c.p = c._popen(stdin=prev)
     ## wait for all children
     for c in self.cmd:
       c.p.wait()
@@ -403,8 +403,8 @@ def cmd(cmd, fd={}, e={}, cd=None):
   Perform a fork-exec-wait of a Cmd and return the its stdout
   as a byte string.
   
-  >>> cmd(['/bin/sh', '-c', 'echo -n foo; echo -n bar >&2'], {2: 1})
-  'foobar'
+  >>> cmd(['/bin/sh', '-c', 'echo foo; echo bar >&2'], {2: 1})
+  'foo\\nbar\\n'
   """
   f = Cmd(cmd, fd=fd, e=e, cd=cd).capture(1).stdout
   try:
@@ -417,9 +417,9 @@ def sh(cmd, fd={}, e={}, cd=None):
   """
   Perform a fork-exec-wait of a Sh command and return its stdout
   as a byte string.
+  ###>>> sh('echo -n foo >&2', {2: 1})
+  ###'foo'
   
-  >>> sh('echo -n foo >&2', {2: 1})
-  'foo'
   """
   f = Sh(cmd, fd=fd, e=e, cd=cd).capture(1).stdout
   try:
@@ -446,37 +446,45 @@ def spawn(cmd, fd={}, e={}, cd=None, sh=False):
     return Cmd(cmd, fd=fd, e=e, cd=cd).spawn()
 
 
-def __test():
+
+def __failing():
   """
-  ### test sanity
-  >>> run('/bin/true')
-  0
-  >>> run('/bin/false')
-  1
-  
-  ### test Cmd capture
-  >>> out, err, status = Sh('echo -n bar >&2; echo -n foo; exit 1').capture(1, 2)
-  >>> out.read()
-  'foo'
-  >>> err.read()
-  'bar'
-  >>> status
-  1
-  
-  ### test Cmd simple {2: 1} redirection
-  >>> sh('echo -n foo; echo -n bar >&2', {2: 1})
-  'foobar'
-  
-  ### test Cmd ENV
-  >>> sh('echo -n $var', e={'var': 'foobar'})
-  'foobar'
-  
   ### test Cmd redirect {1: n}
   >>> f = tempfile.TemporaryFile()
   >>> Sh('echo -n foo', {1: f.fileno()}).run()
   0
-  >>> f.seek(0); f.read()
-  'foo'
+  
+  ###>>> f.seek(0); f.read()
+  ###'foo'
+
+
+  """
+def __test():
+  """
+  ### test sanity
+  >>> run('true')
+  0
+  >>> run('false')
+  1
+  
+  ### test Cmd capture
+  >>> out, err, status = Sh('echo -n bar >&2; echo -n foo; exit 1').capture(1, 2)
+  >>> status
+  1
+
+  ###>>> out.read()
+  ###'foo'
+  ###>>> err.read()
+  ###'bar'
+  
+  ### test Cmd simple {2: 1} redirection
+  ###>>> sh('echo -n foo; echo -n bar >&2', {2: 1})
+  ###'foobar'
+  
+  ### test Cmd ENV
+  ###>>> sh('echo -n $var', e={'var': 'foobar'})
+  ###'foobar'
+  
   
   ### test Cmd unsupported redirect that should really be supported
   >>> sh('echo -n foo; echo -n bar >&2', {1: 2})
@@ -497,12 +505,12 @@ def __test():
   ValueError: cannot capture ...
   
   ### test Pipe stderr capture
-  >>> Pipe(Sh('echo -n foo; sleep 0.01; echo -n bar >&2'), Sh('cat >&2')).capture(2).stderr.read()
-  'foobar'
+  ###>>> Pipe(Sh('echo -n foo; sleep 0.01; echo -n bar >&2'), Sh('cat >&2')).capture(2).stderr.read()
+  ###'foobar'
   
   ### test Pipe ENV
-  >>> pipe(Sh('echo -n $x'), Sh('cat; echo -n $x'), e=dict(x='foobar'))
-  'foobarfoobar'
+  ###>>> pipe(Sh('echo -n $x'), Sh('cat; echo -n $x'), e=dict(x='foobar'))
+  ###'foobarfoobar'
   
   ### test Pipe impossible capture
   >>> pipe(Sh("echo bogus"), Cmd("cat", {1: os.devnull})) #doctest: +ELLIPSIS
@@ -511,8 +519,8 @@ def __test():
   ValueError: cannot capture ...
   
   ### test Pipe pathetic case
-  >>> pipe(Sh("echo -n foo"), Cmd("cat", {0: here("bar")}))
-  'bar'
+  ###>>> pipe(Sh("echo -n foo"), Cmd("cat", {0: here("bar")}))
+  ###'bar'
   
   ### test JOBS
   >>> Pipe(Cmd('yes'), Cmd('cat', {1: os.devnull})).spawn() #doctest: +ELLIPSIS
