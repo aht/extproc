@@ -42,7 +42,9 @@ import subprocess
 import sys
 import tempfile
 
-DEFAULT_FD = {0: 0, 1: 1, 2: 2}
+
+STDIN, STDOUT, STDERR = 0, 1, 2
+DEFAULT_FD = {STDIN: 0, STDOUT: 1, STDERR: 2}
 SILENCE = {0: os.devnull, 1: os.devnull, 2: os.devnull}
 
 PIPE = subprocess.PIPE # should be -1
