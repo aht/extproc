@@ -267,13 +267,13 @@ class Pipe(object):
       c.e.update(self.e)
       c.env.update(self.e)
     for c in cmds[:-1]:
-      if _is_fileno(1, c.fd[1]):
-        c.fd[1] = PIPE
+      if _is_fileno(1, c.fd[STDOUT]):
+        c.fd[STDOUT] = PIPE
     self.fd = {STDIN: cmds[0].fd[STDIN], STDOUT: cmds[-1].fd[STDOUT], 2: 2}
-    self.cmd = cmds
+    self.cmds = cmds
   
   def __repr__(self):
-    return "Pipe(%s)" % (",\n     ".join(map(repr, self.cmd)),)
+    return "Pipe(%s)" % (",\n     ".join(map(repr, self.cmds)),)
   
   def run(self):
     """
@@ -284,16 +284,16 @@ class Pipe(object):
     >>> Pipe(Sh("echo foo"), Sh("cat; echo bar"), Cmd("cat", {1: os.devnull})).run()
     [0, 0, 0]
     """
-    prev = self.cmd[0].fd[0]
-    for c in self.cmd:
+    prev = self.cmds[0].fd[STDIN]
+    for c in self.cmds:
       c.p = c._popen(stdin=prev)
       prev = c.p.stdout
-    for c in self.cmd:
+    for c in self.cmds:
       c.p.wait()
-    for c in self.cmd[:-1]:
-      if c.fd[1] == PIPE:
+    for c in self.cmds[:-1]:
+      if c.fd[STDOUT] == PIPE:
         c.p.stdout.close()
-    return [c.p.returncode for c in self.cmd]
+    return [c.p.returncode for c in self.cmds]
   
   def spawn(self):
     """
@@ -305,12 +305,12 @@ class Pipe(object):
     Remember that all of [c.p.stdout for c in self.cmd] are open files.
     
     >>> yesno = Pipe(Cmd('yes'), Cmd(['grep', 'no'])).spawn()
-    >>> yesno.cmd[0].p.kill()
-    >>> yesno.cmd[-1].p.wait()
+    >>> yesno.cmds[0].p.kill()
+    >>> yesno.cmds[-1].p.wait()
     1
     """
-    prev = self.cmd[0].fd[0]
-    for c in self.cmd:
+    prev = self.cmds[0].fd[0]
+    for c in self.cmds:
       c.p = c._popen(stdin=prev)
       prev = c.p.stdout
     JOBS.append(self)
@@ -352,8 +352,8 @@ class Pipe(object):
     if 2 in fd:
       self.fd[2] = tempfile.TemporaryFile()
     ## start piping
-    prev = self.cmd[0].fd[0]
-    for c in self.cmd[:-1]:
+    prev = self.cmds[0].fd[0]
+    for c in self.cmds[:-1]:
       if not _is_fileno(0, c.fd[0]):
         prev = c.fd[0]
       if 2 in fd and _is_fileno(2, c.fd[2]):
@@ -361,7 +361,7 @@ class Pipe(object):
       c.p = c._popen(stdin=prev)
       prev = c.p.stdout
     ## prepare and fork the last child
-    c = self.cmd[-1]
+    c = self.cmds[-1]
     if not _is_fileno(0, c.fd[0]):
       prev = c.fd[0]
     if 1 in fd:
@@ -534,8 +534,8 @@ def __test():
   ### test JOBS
   >>> Pipe(Cmd('yes'), Cmd('cat', {1: os.devnull})).spawn() #doctest: +ELLIPSIS
   Pipe(...
-  >>> JOBS[-1].cmd[0].p.kill()
-  >>> JOBS[-1].cmd[-1].p.wait()
+  >>> JOBS[-1].cmds[0].p.kill()
+  >>> JOBS[-1].cmds[-1].p.wait()
   0
   """
   pass
