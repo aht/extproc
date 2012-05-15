@@ -269,7 +269,7 @@ class Pipe(object):
     for c in cmd[:-1]:
       if _is_fileno(1, c.fd[1]):
         c.fd[1] = PIPE
-    self.fd = {0: cmd[0].fd[0], 1: cmd[-1].fd[1], 2: 2}
+    self.fd = {STDIN: cmd[0].fd[STDIN], STDOUT: cmd[-1].fd[STDOUT], 2: 2}
     self.cmd = cmd
   
   def __repr__(self):
