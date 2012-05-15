@@ -249,7 +249,7 @@ class Sh(Cmd):
 
 
 class Pipe(object):
-  def __init__(self, *cmd, **kwargs):
+  def __init__(self, *cmds, **kwargs):
     """
     Prepare a pipeline from a list of Cmd's.
     
@@ -263,14 +263,14 @@ class Pipe(object):
     self.e = kwargs.get('e', {})
     self.env = os.environ.copy()
     self.env.update(self.e)
-    for c in cmd:
+    for c in cmds:
       c.e.update(self.e)
       c.env.update(self.e)
-    for c in cmd[:-1]:
+    for c in cmds[:-1]:
       if _is_fileno(1, c.fd[1]):
         c.fd[1] = PIPE
-    self.fd = {STDIN: cmd[0].fd[STDIN], STDOUT: cmd[-1].fd[STDOUT], 2: 2}
-    self.cmd = cmd
+    self.fd = {STDIN: cmds[0].fd[STDIN], STDOUT: cmds[-1].fd[STDOUT], 2: 2}
+    self.cmd = cmds
   
   def __repr__(self):
     return "Pipe(%s)" % (",\n     ".join(map(repr, self.cmd)),)
