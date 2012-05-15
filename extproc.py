@@ -48,7 +48,7 @@ DEFAULT_FD = {STDIN: 0, STDOUT: 1, STDERR: 2}
 SILENCE = {0: os.devnull, 1: os.devnull, 2: os.devnull}
 
 PIPE = subprocess.PIPE # should be -1
-STDOUT = subprocess.STDOUT # should be -2
+_ORIG_STDOUT = subprocess.STDOUT # should be -2
 CLOSE = None
 
 JOBS = []
@@ -123,7 +123,7 @@ class Cmd(object):
         self.fd[stream_num] = open(fd_num, 'r' if stream_num == 0 else 'w')
       elif isinstance(fd_num, int):
         if stream_num == 2 and fd_num == 1:
-          self.fd[STDERR] = STDOUT
+          self.fd[STDERR] = _ORIG_STDOUT
         elif (fd_num in (0, 1, 2)):
           raise NotImplementedError(
             "redirection {%s: %s} not supported" % (stream_num, fd_num))
