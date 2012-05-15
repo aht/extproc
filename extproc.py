@@ -198,18 +198,20 @@ class Cmd(object):
       fd = set(fd) or set([1])
     if not fd <= set([1, 2]):
       raise NotImplementedError("can only capture a subset of fd [1, 2] for now")
-    if 1 in fd:
-      if _is_fileno(1, self.fd[1]):
-        self.fd[1] = tempfile.TemporaryFile()
+    if STDOUT in fd:
+      if _is_fileno(STDOUT, self.fd[STDOUT]):
+        self.fd[STDOUT] = tempfile.TemporaryFile()
       else:
-        raise ValueError("cannot capture the child's stdout: it had been redirected to %r"
-        		% _name_or_self(self.fd[1]))
+        raise ValueError(
+          "cannot capture the child's stdout: it had been redirected to %r"
+              % _name_or_self(self.fd[1]))
     if 2 in fd:
       if _is_fileno(2, self.fd[2]):
         self.fd[2] = tempfile.TemporaryFile()
       else:
-        raise ValueError("cannot capture the child's stderr: it had been redirected to %r"
-        		% _name_or_self(self.fd[2]))
+        raise ValueError(
+          "cannot capture the child's stderr: it had been redirected to %r"
+              % _name_or_self(self.fd[2]))
     p = self._popen()
     if p.stdin:
       p.stdin.close()
@@ -309,7 +311,7 @@ class Pipe(object):
     >>> yesno.cmds[-1].p.wait()
     1
     """
-    prev = self.cmds[0].fd[0]
+    prev = self.cmds[0].fd[STDIN]
     for c in self.cmds:
       c.p = c._popen(stdin=prev)
       prev = c.p.stdout
