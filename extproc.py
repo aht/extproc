@@ -109,27 +109,40 @@ class Cmd(object):
     self.env.update(e)
     self.fd = DEFAULT_FD.copy()
     self.fd.update(fd)
+    self.fd_objs = self._make_fd_objs(self.fd)
 
-    for stream_num in fd.keys():
+  def _make_fd_objs(self, fd_dict):
+      """this function takes the STDIN, STDOUT, STDERR inputs, and
+      returns a dictionary where each of those values is a true file, or at least a
+      object,
+      
+      I still don't like the cyclomatic complexity of this.  I want to
+      work to tease out the complexity into better named blocks and
+      functions, this is very dense and hard to follow """
+      fd_objs = {}
+      for stream_num in fd.keys():
         if not isinstance(stream_num, int):
-            raise TypeError("fd keys must have type int")
+          raise TypeError("fd keys must have type int")
         elif stream_num < 0 or stream_num >= 3:
-            fd_num = fd[stream_num]
-            raise NotImplementedError("redirection {%s: %s} not supported" % (stream_num, fd_num))
+          fd_num = fd[stream_num]
+        raise NotImplementedError("redirection {%s: %s} not supported" % (stream_num, fd_num))
 
-    for stream_num, fd_num in fd.iteritems():
+      for stream_num, fd_num in fd.iteritems():
         if isinstance(fd_num, basestring):
-            self.fd[stream_num] = open(fd_num, 'r' if stream_num == 0 else 'w')
+          fd_objs[stream_num] = open(fd_num, 'r' if stream_num == 0 else 'w')
+        elif hasattr(fd_num, 'fileno'):
+          fd_objs[stream_num] = fd_num  # this is our ideal case
         elif isinstance(fd_num, int):
-            if stream_num == 2 and fd_num == 1:
-                self.fd[STDERR] = _ORIG_STDOUT
-            elif (fd_num in (0, 1, 2)):
-                raise NotImplementedError("redirection {%s: %s} not supported" % (stream_num, fd_num))
+          fd_objs[stream_num] = fd_num
+          if stream_num == 2 and fd_num == 1:
+            fd_objs[STDERR] = _ORIG_STDOUT
+          elif (fd_num in (0, 1, 2)):
+            raise NotImplementedError("redirection {%s: %s} not supported" % (stream_num, fd_num))
         elif stream_num is CLOSE:
-            raise NotImplementedError("closing is not supported")
-        elif not hasattr(fd_num, 'fileno'):
-            raise ValueError("fd value %s is not a file, string, int, or CLOSE" % (fd_num,))
-   
+          raise NotImplementedError("closing is not supported")
+        raise ValueError("fd value %s is not a file, string, int, or CLOSE" % (fd_num,))
+      return fd_objs
+
   def __repr__(self):
     return "Cmd(%r, fd=%r, e=%r, cd=%r)" % (
       self.cmd, dict((k, _name_or_self(v)) for k, v in self.fd.iteritems()),
@@ -225,7 +238,7 @@ class Cmd(object):
   @property
   def popen_args(self):
     return dict(args=self.cmd, cwd=self.cd, env=self.env,
-    stdin=self.fd[0], stdout=self.fd[1], stderr=self.fd[2])
+    stdin=self.fd_objs[0], stdout=self.fd_objs[1], stderr=self.fd_objs[2])
 
   def _popen(self, **kwargs):
       basic_popen_args = self.popen_args
