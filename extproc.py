@@ -68,21 +68,21 @@ class Cmd(object):
     Prepare for a fork-exec of 'cmd' with information about changing
     of working directory, extra environment variables and I/O
     redirections if necessary.
-    
+
     :param cmd: a list of command argurments.  If a string, it
         is passed to shlex.split().
-    
+
     :param e: a dict of *extra* enviroment variables.
-    
+
     :param fd: a dict mapping k in [0, 1, 2] → v of type [file, string, int]
-    
+
       Whatever is pointed to by fd[0], fd[1] and fd[2] will become the
       child's stdin, stdout and stderr, respectively.
 
       If any of key [0, 1, 2] is not specified, then it takes the
       values [0, 1, 2] respectively -- in effect, reusing the parent's
       [stdin, stdout, stderr].
-      
+
       The value fd[k] can be of type
       * file: always works and offer the most control over mode of operation
       * string: works if can be open()'ed with mode 'r' when k == 0, or mode 'w' for k in [1, 2]
@@ -90,10 +90,10 @@ class Cmd(object):
 
     Note that the constructor only saves information in the object and
     does not actually execute anything.
-    
+
     >>> Cmd("/bin/sh -c 'echo foo'")
     Cmd(['/bin/sh', '-c', 'echo foo'], fd={0: 0, 1: 1, 2: 2}, e={}, cd=None)
-    
+
     >>> Cmd(['grep', 'my stuff']) == Cmd('grep "my stuff"')
     True
     """
@@ -109,64 +109,51 @@ class Cmd(object):
     self.env.update(e)
     self.fd = DEFAULT_FD.copy()
     self.fd.update(fd)
-    self.fd_objs = self._make_fd_objs(self.fd)
 
-  def _make_fd_objs(self, fd_dict):
-      """this function takes the STDIN, STDOUT, STDERR inputs, and
-      returns a dictionary where each of those values is a true file, or at least a
-      object,
-      
-      I still don't like the cyclomatic complexity of this.  I want to
-      work to tease out the complexity into better named blocks and
-      functions, this is very dense and hard to follow """
-      fd_objs = {}
-      for stream_num in fd.keys():
+    for stream_num in fd.keys():
         if not isinstance(stream_num, int):
-          raise TypeError("fd keys must have type int")
+            raise TypeError("fd keys must have type int")
         elif stream_num < 0 or stream_num >= 3:
-          fd_num = fd[stream_num]
-        raise NotImplementedError("redirection {%s: %s} not supported" % (stream_num, fd_num))
-
-      for stream_num, fd_num in fd.iteritems():
-        if isinstance(fd_num, basestring):
-          fd_objs[stream_num] = open(fd_num, 'r' if stream_num == 0 else 'w')
-        elif hasattr(fd_num, 'fileno'):
-          fd_objs[stream_num] = fd_num  # this is our ideal case
-        elif isinstance(fd_num, int):
-          fd_objs[stream_num] = fd_num
-          if stream_num == 2 and fd_num == 1:
-            fd_objs[STDERR] = _ORIG_STDOUT
-          elif (fd_num in (0, 1, 2)):
+            fd_num = fd[stream_num]
             raise NotImplementedError("redirection {%s: %s} not supported" % (stream_num, fd_num))
+
+    for stream_num, fd_num in fd.iteritems():
+        if isinstance(fd_num, basestring):
+            self.fd[stream_num] = open(fd_num, 'r' if stream_num == 0 else 'w')
+        elif isinstance(fd_num, int):
+            if stream_num == 2 and fd_num == 1:
+                self.fd[STDERR] = _ORIG_STDOUT
+            elif (fd_num in (0, 1, 2)):
+                raise NotImplementedError("redirection {%s: %s} not supported" % (stream_num, fd_num))
         elif stream_num is CLOSE:
-          raise NotImplementedError("closing is not supported")
-        raise ValueError("fd value %s is not a file, string, int, or CLOSE" % (fd_num,))
-      return fd_objs
+            raise NotImplementedError("closing is not supported")
+        elif not hasattr(fd_num, 'fileno'):
+            raise ValueError("fd value %s is not a file, string, int, or CLOSE" % (fd_num,))
 
   def __repr__(self):
     return "Cmd(%r, fd=%r, e=%r, cd=%r)" % (
       self.cmd, dict((k, _name_or_self(v)) for k, v in self.fd.iteritems()),
       self.e, self.cd)
-  
+
   def __eq__(self, other):
     return (self.cmd == other.cmd) and (self.fd == other.fd) and\
            (self.env == other.env) and (self.cd == other.cd)
-  
+
   def run(self):
     """
     Fork-exec the Cmd and waits for its termination.
-    
+
     Return the child's exit status.
-    
+
     >>> Cmd(['/bin/sh', '-c', 'exit 1']).run()
     1
     """
     return subprocess.call(**self.popen_args)
-  
+
   def spawn(self):
     """
     Fork-exec the Cmd but do not wait for its termination.
-    
+
     Return a subprocess.Popen object (which is also stored in 'self.p')
     """
     self.p = self._popen()
@@ -177,7 +164,7 @@ class Cmd(object):
     """
     Fork-exec the Cmd and wait for its termination, capturing the
     output and/or error.
-    
+
     :param fd: a list of file descriptors to capture, should be a subset of [1, 2] where
       * 1 represents the child's stdout
       * 2 represents the child's stderr
@@ -186,13 +173,13 @@ class Cmd(object):
     stdout and stderr are captured file objects or None.
 
     Don't forget to close the file objects!
-    
+
     ###>>> Cmd("/bin/sh -c 'echo -n foo'").capture(1).stdout.read()
     ###'foo'
-    
+
     ###>>> Cmd("/bin/sh -c 'echo -n bar >&2'").capture(2).stderr.read()
     ###'bar'
-    
+
     >>> cout, cerr, status = Cmd("/bin/sh -c 'echo -n foo; echo -n bar >&2'").capture(1, 2)
 
     ###>>> cout.read()
@@ -238,7 +225,7 @@ class Cmd(object):
   @property
   def popen_args(self):
     return dict(args=self.cmd, cwd=self.cd, env=self.env,
-    stdin=self.fd_objs[0], stdout=self.fd_objs[1], stderr=self.fd_objs[2])
+    stdin=self.fd[0], stdout=self.fd[1], stderr=self.fd[2])
 
   def _popen(self, **kwargs):
       basic_popen_args = self.popen_args
@@ -249,25 +236,25 @@ class Sh(Cmd):
   def __init__(self, cmd, fd={}, e={}, cd=None):
     """
     Prepare for a fork-exec of a shell command.
-    
+
     Equivalent to Cmd(['/bin/sh', '-c', cmd], **kwargs).
     """
     super(Sh, self).__init__(['/bin/sh', '-c', cmd], fd=fd, e=e, cd=cd)
-  
+
   def __repr__(self):
     return "Sh(%r, fd=%r, e=%r, cd=%r)" % (self.cmd[2], dict(
-    			(k, _name_or_self(v)) for k, v in self.fd.iteritems()
-    		), self.e, self.cd)
+                        (k, _name_or_self(v)) for k, v in self.fd.iteritems()
+                ), self.e, self.cd)
 
 
 class Pipe(object):
   def __init__(self, *cmds, **kwargs):
     """
     Prepare a pipeline from a list of Cmd's.
-    
+
     :parameter e: extra environment variables to be exported to all
                   sub-commands, must be a keyword argument
-    
+
     >>> Pipe(Cmd('yes'), Cmd('cat', {1: os.devnull}))
     Pipe(Cmd(['yes'], fd={0: 0, 1: -1, 2: 2}, e={}, cd=None),
          Cmd(['cat'], fd={0: 0, 1: '/dev/null', 2: 2}, e={}, cd=None))
@@ -283,16 +270,16 @@ class Pipe(object):
         c.fd[STDOUT] = PIPE
     self.fd = {STDIN: cmds[0].fd[STDIN], STDOUT: cmds[-1].fd[STDOUT], 2: 2}
     self.cmds = cmds
-  
+
   def __repr__(self):
     return "Pipe(%s)" % (",\n     ".join(map(repr, self.cmds)),)
-  
+
   def run(self):
     """
     Fork-exec the pipeline and wait for its termination.
-    
+
     Return an array of all children's exit status.
-    
+
     >>> Pipe(Sh("echo foo"), Sh("cat; echo bar"), Cmd("cat", {1: os.devnull})).run()
     [0, 0, 0]
     """
@@ -306,16 +293,16 @@ class Pipe(object):
       if c.fd[STDOUT] == PIPE:
         c.p.stdout.close()
     return [c.p.returncode for c in self.cmds]
-  
+
   def spawn(self):
     """
     Fork-exec the pipeline but do not wait for its termination.
-    
+
     After spawned, each self.cmd[i] will have a 'p' attribute that is
     the spawned subprocess.Popen object.
-    
+
     Remember that all of [c.p.stdout for c in self.cmd] are open files.
-    
+
     >>> yesno = Pipe(Cmd('yes'), Cmd(['grep', 'no'])).spawn()
     >>> yesno.cmds[0].p.kill()
     >>> yesno.cmds[-1].p.wait()
@@ -327,25 +314,25 @@ class Pipe(object):
       prev = c.p.stdout
     JOBS.append(self)
     return self
-  
+
   def capture(self, *fd):
     """
     Fork-exec the Cmd and wait for its termination, capturing the
     output and/or error.
-    
+
     :param fd: a list of file descriptors to capture, should be a subset of [1, 2] where
       * 1 represents what the children would have written to the parent's stdout
       * 2 represents what the children would have written to the parent's stderr
-    
+
     Return a namedtuple (stdout, stderr, exit_status) where stdout and
     stderr are captured file objects or None and exit_status is a list
     of all children's exit statuses.
-    
+
     Don't forget to close the file objects!
-    
+
     ###>>> Pipe(Sh('echo -n foo; echo -n bar >&2', {2: os.devnull}), Cmd('cat')).capture(1).stdout.read()
     ###'foo'
-    
+
     ###>>> Pipe(Sh('echo -n foo; echo -n bar >&2'), Cmd('cat', {1: os.devnull})).capture(2).stderr.read()
     ###'bar'
     """
@@ -359,7 +346,7 @@ class Pipe(object):
       raise NotImplementedError("can only capture a subset of fd [1, 2] for now")
     if 1 in fd and not _is_fileno(1, self.fd[1]):
       raise ValueError("cannot capture the last child's stdout: it had been redirected to %r"
-      		% _name_or_self(self.fd[1]))
+                % _name_or_self(self.fd[1]))
     temp = None
     if 2 in fd:
       self.fd[2] = tempfile.TemporaryFile()
@@ -378,7 +365,7 @@ class Pipe(object):
       prev = c.fd[0]
     if 1 in fd:
       ## we made sure that c.fd[1] had not been redirected before
-      c.fd[1] = tempfile.TemporaryFile() 
+      c.fd[1] = tempfile.TemporaryFile()
       self.fd[1] = c.fd[1]
     if 2 in fd and _is_fileno(2, c.fd[2]):
       c.fd[2] = self.fd[2]
@@ -401,7 +388,7 @@ class Pipe(object):
 def here(string):
   """
   Make a temporary file from a string for use in redirection.
-  
+
   >>> cmd('cat', {0: here("foo bar")})
   'foo bar'
   """
@@ -413,7 +400,7 @@ def here(string):
 def run(cmd, fd={}, e={}, cd=None):
   """
   Perform a fork-exec-wait of a Cmd and return its exit status.
-  
+
   >>> run('cat /dev/null')
   0
   """
@@ -423,7 +410,7 @@ def cmd(cmd, fd={}, e={}, cd=None):
   """
   Perform a fork-exec-wait of a Cmd and return the its stdout
   as a byte string.
-  
+
   >>> cmd(['/bin/sh', '-c', 'echo foo; echo bar >&2'], {2: 1})
   'foo\\nbar\\n'
   """
@@ -440,7 +427,7 @@ def sh(cmd, fd={}, e={}, cd=None):
   as a byte string.
   ###>>> sh('echo -n foo >&2', {2: 1})
   ###'foo'
-  
+
   """
   f = Sh(cmd, fd=fd, e=e, cd=cd).capture(1).stdout
   try:
@@ -474,7 +461,7 @@ def __failing():
   >>> f = tempfile.TemporaryFile()
   >>> Sh('echo -n foo', {1: f.fileno()}).run()
   0
-  
+
   ###>>> f.seek(0); f.read()
   ###'foo'
 
@@ -487,7 +474,7 @@ def __test():
   0
   >>> run('false')
   1
-  
+
   ### test Cmd capture
   >>> out, err, status = Sh('echo -n bar >&2; echo -n foo; exit 1').capture(1, 2)
   >>> status
@@ -497,52 +484,52 @@ def __test():
   ###'foo'
   ###>>> err.read()
   ###'bar'
-  
+
   ### test Cmd simple {2: 1} redirection
   ###>>> sh('echo -n foo; echo -n bar >&2', {2: 1})
   ###'foobar'
-  
+
   ### test Cmd ENV
   ###>>> sh('echo -n $var', e={'var': 'foobar'})
   ###'foobar'
-  
-  
+
+
   ### test Cmd unsupported redirect that should really be supported
   >>> sh('echo -n foo; echo -n bar >&2', {1: 2})
   Traceback (most recent call last):
   ...
   NotImplementedError: redirection {1: 2} not supported
-  
+
   ### test Cmd unsupported redirect
   >>> sh('echo -n foo; echo -n bar >&2', {5: 12})
   Traceback (most recent call last):
   ...
   NotImplementedError: redirection {5: 12} not supported
-  
+
   ### test Cmd impossible capture
   >>> sh("echo bogus stuff", {1: os.devnull}) #doctest: +ELLIPSIS
   Traceback (most recent call last):
   ...
   ValueError: cannot capture ...
-  
+
   ### test Pipe stderr capture
   ###>>> Pipe(Sh('echo -n foo; sleep 0.01; echo -n bar >&2'), Sh('cat >&2')).capture(2).stderr.read()
   ###'foobar'
-  
+
   ### test Pipe ENV
   ###>>> pipe(Sh('echo -n $x'), Sh('cat; echo -n $x'), e=dict(x='foobar'))
   ###'foobarfoobar'
-  
+
   ### test Pipe impossible capture
   >>> pipe(Sh("echo bogus"), Cmd("cat", {1: os.devnull})) #doctest: +ELLIPSIS
   Traceback (most recent call last):
   ...
   ValueError: cannot capture ...
-  
+
   ### test Pipe pathetic case
   ###>>> pipe(Sh("echo -n foo"), Cmd("cat", {0: here("bar")}))
   ###'bar'
-  
+
   ### test JOBS
   >>> Pipe(Cmd('yes'), Cmd('cat', {1: os.devnull})).spawn() #doctest: +ELLIPSIS
   Pipe(...
