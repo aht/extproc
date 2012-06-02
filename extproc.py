@@ -343,9 +343,11 @@ class Pipe(object):
     else:
       fd = set(fd) or set([1])
     if not fd <= set([1, 2]):
-      raise NotImplementedError("can only capture a subset of fd [1, 2] for now")
+      raise NotImplementedError(
+        "can only capture a subset of fd [1, 2] for now")
     if 1 in fd and not _is_fileno(1, self.fd[1]):
-      raise ValueError("cannot capture the last child's stdout: it had been redirected to %r"
+      raise ValueError(
+        "cannot capture the last child's stdout: it had been redirected to %r"
                 % _name_or_self(self.fd[1]))
     temp = None
     if 2 in fd:
@@ -371,10 +373,10 @@ class Pipe(object):
       c.fd[2] = self.fd[2]
     c.p = c._popen(stdin=prev)
     ## wait for all children
-    for c in self.cmd:
+    for c in self.cmds:
       c.p.wait()
     ## close all unneeded files
-    for c in self.cmd[:-1]:
+    for c in self.cmds[:-1]:
       if c.fd[1] == PIPE:
         c.p.stdout.close()
     if len(fd) == 1:
@@ -382,7 +384,7 @@ class Pipe(object):
       if 2 in fd and not _is_fileno(1, self.fd[1]): self.fd[1].close()
     if 1 in fd: self.fd[1].seek(0)
     if 2 in fd: self.fd[2].seek(0)
-    return Capture(self.fd[1], self.fd[2], [c.p.returncode for c in self.cmd])
+    return Capture(self.fd[1], self.fd[2], [c.p.returncode for c in self.cmds])
 
 
 def here(string):
