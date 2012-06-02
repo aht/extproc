@@ -144,6 +144,30 @@ class Cmd(object):
         return (self.cmd == other.cmd) and (self.fd == other.fd) and\
                (self.env == other.env) and (self.cd == other.cd)
 
+    def kill(self):
+        if not getattr(self, 'p', False):
+            raise Exception('No process to kill')
+        try:
+            return self.p.kill()
+        except OSError:
+            pass
+        finally:
+            for job in JOBS:
+                if job is self:
+                    JOBS.remove(self)
+
+
+    def wait(self):
+        if not getattr(self, 'p', False):
+            raise Exception('No process to kill')
+        try:
+            return self.p.wait()
+        finally:
+            for job in JOBS:
+                if job is self:
+                    JOBS.remove(self)
+
+
     def run(self):
         """
         Fork-exec the Cmd and waits for its termination.
@@ -155,14 +179,17 @@ class Cmd(object):
         """
         return subprocess.call(**self.popen_args)
 
-    def spawn(self):
+    def spawn(self, append_to_jobs=True):
         """
         Fork-exec the Cmd but do not wait for its termination.
 
         Return a subprocess.Popen object (which is also stored in 'self.p')
         """
+        if getattr(self, 'p', False):
+            raise Exception('can only spawn once per cmd object')
         self.p = self._popen()
-        JOBS.append(self)
+        if append_to_jobs:
+            JOBS.append(self)
         return self.p
 
     def capture(self, *fd):
@@ -301,12 +328,33 @@ class Pipe(object):
 
         Remember that all of [c.p.stdout for c in self.cmd] are open files.
        """
+        if getattr(self, 'p', False):
+            raise Exception('you can only spawn a Cmd object once')
+
         prev = self.cmds[0].fd[STDIN]
         for c in self.cmds:
             c.p = c._popen(stdin=prev)
             prev = c.p.stdout
         JOBS.append(self)
         return self
+
+    def kill(self):
+        try:
+            for c in self.cmds:
+                c.kill()
+        finally:
+            for job in JOBS:
+                if job is self:
+                    JOBS.remove(self)
+
+    def wait(self):
+        try:
+            return self.cmds[-1].wait()
+        finally:
+            for job in JOBS:
+                if job is self:
+                    JOBS.remove(self)
+
 
     def capture(self, *fd):
         """

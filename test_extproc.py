@@ -11,6 +11,11 @@ def sh_strip(in_):
     return in2.strip()
 class ExtProcTest(unittest.TestCase):
 
+
+    def tearDown(self):
+        for c in JOBS:
+            c.kill()
+
     def assertSh(self, str1, str2):
         self.assertEquals(sh_strip(str1), sh_strip(str2))
 
@@ -61,6 +66,8 @@ class LowerCaseTest(ExtProcTest):
         self.assertSh(pipe(Sh("echo foo"), Cmd("cat", {0: here("bar")})), 'bar')
 
         ### test JOBS
+        #import pdb
+        #pdb.set_trace()
         self.assertEquals(len(JOBS), 0)
         Pipe(Cmd('yes'), Cmd('cat', {1: os.devnull})).spawn()
         JOBS[-1].cmds[0].p.kill()
@@ -102,15 +109,17 @@ class ExtProcPipeTest(ExtProcTest):
                  Cmd("cat", {1: os.devnull})).run(),
             [0,0,0])
 
-    def _test_spawn(self):
+    def test_spawn(self):
         """FIXME: I'm not sure why this test is failing, let me
         complete the test suite and see if ohters are failing, maybe
         there is a more obvious cause """
+
+        self.assertEquals(len(JOBS), 0)
         yesno = Pipe(Cmd('yes'), Cmd(['grep', 'no'])).spawn()
-        time.sleep(0.5)
-        yesno.cmd[0].p.kill()
-        time.sleep(0.5)
-        self.assertEquals(yesno.cmd[-1].p.wait(), 1)
+        yesno.cmds[0].p.kill()
+        #self.assertEquals(yesno.cmds[-1].p.wait(), 1)
+        self.assertEquals(yesno.wait(), 1)
+        self.assertEquals(len(JOBS), 0)
 
     def test_capture(self):
         self.assertSh(
@@ -139,6 +148,13 @@ class ExtProcCmdTest(ExtProcTest):
         cout, cerr, status = c_obj.capture(1, 2)
         self.assertSh(cout.read(), 'foo')
         self.assertSh(cerr.read(), 'bar')
+
+
+    def test_spawn_once(self):
+        ab = Cmd('yes', {STDOUT: '/dev/null', STDERR: '/dev/null'})
+        ab.spawn()
+        self.assertRaises(Exception, lambda: ab.spawn())
+
 
 if __name__ == '__main__':
     unittest.main()
