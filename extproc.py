@@ -136,34 +136,34 @@ class Cmd(object):
                   "fd value %s is not a file, string, int, or CLOSE" % (fd_num,))
 
     def __repr__(self):
-      return "Cmd(%r, fd=%r, e=%r, cd=%r)" % (
-        self.cmd, dict((k, _name_or_self(v)) for k, v in self.fd.iteritems()),
-        self.e, self.cd)
+        return "Cmd(%r, fd=%r, e=%r, cd=%r)" % (
+          self.cmd, dict((k, _name_or_self(v)) for k, v in self.fd.iteritems()),
+          self.e, self.cd)
 
     def __eq__(self, other):
-      return (self.cmd == other.cmd) and (self.fd == other.fd) and\
-             (self.env == other.env) and (self.cd == other.cd)
+        return (self.cmd == other.cmd) and (self.fd == other.fd) and\
+               (self.env == other.env) and (self.cd == other.cd)
 
     def run(self):
-      """
-      Fork-exec the Cmd and waits for its termination.
+        """
+        Fork-exec the Cmd and waits for its termination.
 
-      Return the child's exit status.
+        Return the child's exit status.
 
-      >>> Cmd(['/bin/sh', '-c', 'exit 1']).run()
-      1
-      """
-      return subprocess.call(**self.popen_args)
+        >>> Cmd(['/bin/sh', '-c', 'exit 1']).run()
+        1
+        """
+        return subprocess.call(**self.popen_args)
 
     def spawn(self):
-      """
-      Fork-exec the Cmd but do not wait for its termination.
+        """
+        Fork-exec the Cmd but do not wait for its termination.
 
-      Return a subprocess.Popen object (which is also stored in 'self.p')
-      """
-      self.p = self._popen()
-      JOBS.append(self)
-      return self.p
+        Return a subprocess.Popen object (which is also stored in 'self.p')
+        """
+        self.p = self._popen()
+        JOBS.append(self)
+        return self.p
 
     def capture(self, *fd):
         """
