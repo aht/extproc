@@ -85,8 +85,10 @@ class Cmd(object):
 
       The value fd[k] can be of type
       * file: always works and offer the most control over mode of operation
-      * string: works if can be open()'ed with mode 'r' when k == 0, or mode 'w' for k in [1, 2]
-      * int: works for redirection {2: 1} or {k: v} when v ≥ 3 and v is an existing file descriptor
+      * string: works if can be open()'ed with mode 'r' when k == 0,
+        or mode 'w' for k in [1, 2]
+     * int: works for redirection {2: 1}
+            or {k: v} when v ≥ 3 and v is an existing file descriptor
 
     Note that the constructor only saves information in the object and
     does not actually execute anything.
@@ -115,7 +117,8 @@ class Cmd(object):
             raise TypeError("fd keys must have type int")
         elif stream_num < 0 or stream_num >= 3:
             fd_num = fd[stream_num]
-            raise NotImplementedError("redirection {%s: %s} not supported" % (stream_num, fd_num))
+            raise NotImplementedError(
+              "redirection {%s: %s} not supported" % (stream_num, fd_num))
 
     for stream_num, fd_num in fd.iteritems():
         if isinstance(fd_num, basestring):
@@ -124,11 +127,13 @@ class Cmd(object):
             if stream_num == 2 and fd_num == 1:
                 self.fd[STDERR] = _ORIG_STDOUT
             elif (fd_num in (0, 1, 2)):
-                raise NotImplementedError("redirection {%s: %s} not supported" % (stream_num, fd_num))
+                raise NotImplementedError(
+                  "redirection {%s: %s} not supported" % (stream_num, fd_num))
         elif stream_num is CLOSE:
             raise NotImplementedError("closing is not supported")
         elif not hasattr(fd_num, 'fileno'):
-            raise ValueError("fd value %s is not a file, string, int, or CLOSE" % (fd_num,))
+            raise ValueError(
+              "fd value %s is not a file, string, int, or CLOSE" % (fd_num,))
 
   def __repr__(self):
     return "Cmd(%r, fd=%r, e=%r, cd=%r)" % (
@@ -165,7 +170,8 @@ class Cmd(object):
     Fork-exec the Cmd and wait for its termination, capturing the
     output and/or error.
 
-    :param fd: a list of file descriptors to capture, should be a subset of [1, 2] where
+    :param fd: a list of file descriptors to capture,
+               should be a subset of [1, 2] where
       * 1 represents the child's stdout
       * 2 represents the child's stderr
 
@@ -174,19 +180,13 @@ class Cmd(object):
 
     Don't forget to close the file objects!
 
-    ###>>> Cmd("/bin/sh -c 'echo -n foo'").capture(1).stdout.read()
-    ###'foo'
+   >>> Cmd("/bin/sh -c 'echo -n foo'").capture(1).stdout.read()
+   'foo'
 
-    ###>>> Cmd("/bin/sh -c 'echo -n bar >&2'").capture(2).stderr.read()
-    ###'bar'
+   >>> Cmd("/bin/sh -c 'echo -n bar >&2'").capture(2).stderr.read()
+   'bar'
 
-    >>> cout, cerr, status = Cmd("/bin/sh -c 'echo -n foo; echo -n bar >&2'").capture(1, 2)
-
-    ###>>> cout.read()
-    ###'foo'
-    ###>>> cerr.read()
-    ###'bar'
-    """
+   """
     if not fd:
       raise ValueError("what do you want to capture?")
     if isinstance(fd, int):
@@ -194,7 +194,8 @@ class Cmd(object):
     else:
       fd = set(fd) or set([1])
     if not fd <= set([1, 2]):
-      raise NotImplementedError("can only capture a subset of fd [1, 2] for now")
+      raise NotImplementedError(
+        "can only capture a subset of fd [1, 2] for now")
     if STDOUT in fd:
       if _is_fileno(STDOUT, self.fd[STDOUT]):
         self.fd[STDOUT] = tempfile.TemporaryFile()

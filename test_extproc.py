@@ -80,16 +80,17 @@ class LowerCaseTest(ExtProcTest):
 
 class ExtProcPipeTest(ExtProcTest):
 
-    def test_capture(self):
-        self.assertSh(
-            Pipe(Sh('echo foo; echo bar >&2', {2: os.devnull}),
-                 Cmd('cat')).capture(1).stdout.read(),
-            'foo')
+    def _test_Pipe(self):
+        Pipe(Cmd('yes'), Cmd('cat', {1: os.devnull}))
+        Pipe(Cmd(['yes'], fd={0: 0, 1: -1, 2: 2}, e={}, cd=None),
+             Cmd(['cat'], fd={0: 0, 1: '/dev/null', 2: 2}, e={}, cd=None))
 
-        self.assertSh(
-            Pipe(Sh('echo foo; echo bar >&2'),
-                 Cmd('cat', {1: os.devnull})).capture(2).stderr.read(),
-            'bar')
+    def test_run(self):
+        self.assertEquals(
+            Pipe(Sh("echo foo"),
+                 Sh("cat; echo bar"),
+                 Cmd("cat", {1: os.devnull})).run(),
+            [0,0,0])
 
     def _test_spawn(self):
         """FIXME: I'm not sure why this test is failing, let me
@@ -101,16 +102,33 @@ class ExtProcPipeTest(ExtProcTest):
         time.sleep(0.5)
         self.assertEquals(yesno.cmd[-1].p.wait(), 1)
 
-    def test_run(self):
-        self.assertEquals(
-            Pipe(Sh("echo foo"),
-                 Sh("cat; echo bar"),
-                 Cmd("cat", {1: os.devnull})).run(),
-            [0,0,0])
+    def test_capture(self):
+        self.assertSh(
+            Pipe(Sh('echo foo; echo bar >&2', {2: os.devnull}),
+                 Cmd('cat')).capture(1).stdout.read(),
+            'foo')
 
-    def _test_Pipe(self):
-        Pipe(Cmd('yes'), Cmd('cat', {1: os.devnull}))
-        Pipe(Cmd(['yes'], fd={0: 0, 1: -1, 2: 2}, e={}, cd=None),
-             Cmd(['cat'], fd={0: 0, 1: '/dev/null', 2: 2}, e={}, cd=None))
+        self.assertSh(
+            Pipe(Sh('echo foo; echo bar >&2'),
+                 Cmd('cat', {1: os.devnull})).capture(2).stderr.read(),
+            'bar')
+
+class ExtProcCmdTest(ExtProcTest):
+    def test_CMD(self):
+        self.assertEquals(Cmd(['grep', 'my stuff']), Cmd('grep "my stuff"'))
+
+    def test_capture(self):
+
+        self.assertSh(
+            Cmd("/bin/sh -c 'echo foo'").capture(1).stdout.read(), 'foo')
+
+        self.assertSh(
+            Cmd("/bin/sh -c 'echo bar >&2'").capture(2).stderr.read(), 'bar')
+
+        c_obj = Cmd("/bin/sh -c 'echo  foo; echo  bar >&2'")
+        cout, cerr, status = c_obj.capture(1, 2)
+        self.assertSh(cout.read(), 'foo')
+        self.assertSh(cerr.read(), 'bar')
+
 if __name__ == '__main__':
     unittest.main()
