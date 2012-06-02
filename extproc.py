@@ -253,167 +253,176 @@ class Sh(Cmd):
 
 
 class Pipe(object):
-  def __init__(self, *cmds, **kwargs):
-    """
-    Prepare a pipeline from a list of Cmd's.
+    def __init__(self, *cmds, **kwargs):
+        """
+        Prepare a pipeline from a list of Cmd's.
 
-    :parameter e: extra environment variables to be exported to all
-                  sub-commands, must be a keyword argument
-    """
-    self.e = kwargs.get('e', {})
-    self.env = os.environ.copy()
-    self.env.update(self.e)
-    for c in cmds:
-        c.e.update(self.e)
-        c.env.update(self.e)
-    for c in cmds[:-1]:
-        if _is_fileno(1, c.fd[STDOUT]):
-          c.fd[STDOUT] = PIPE
-    self.fd = {STDIN: cmds[0].fd[STDIN], STDOUT: cmds[-1].fd[STDOUT], 2: 2}
-    self.cmds = cmds
+        :parameter e: extra environment variables to be exported to all
+                      sub-commands, must be a keyword argument
+        """
+        self.e = kwargs.get('e', {})
+        self.env = os.environ.copy()
+        self.env.update(self.e)
+        for c in cmds:
+            c.e.update(self.e)
+            c.env.update(self.e)
+        for c in cmds[:-1]:
+            if _is_fileno(1, c.fd[STDOUT]):
+              c.fd[STDOUT] = PIPE
+        self.fd = {STDIN: cmds[0].fd[STDIN], STDOUT: cmds[-1].fd[STDOUT], 2: 2}
+        self.cmds = cmds
 
-  def __repr__(self):
-    return "Pipe(%s)" % (",\n     ".join(map(repr, self.cmds)),)
+    def __repr__(self):
+        return "Pipe(%s)" % (",\n     ".join(map(repr, self.cmds)),)
 
-  def run(self):
-    """
-    Fork-exec the pipeline and wait for its termination.
+    def run(self):
+        """
+        Fork-exec the pipeline and wait for its termination.
 
-    Return an array of all children's exit status.
-    """
-    prev = self.cmds[0].fd[STDIN]
-    for c in self.cmds:
+        Return an array of all children's exit status.
+        """
+        prev = self.cmds[0].fd[STDIN]
+        for c in self.cmds:
+            c.p = c._popen(stdin=prev)
+            prev = c.p.stdout
+        for c in self.cmds:
+            c.p.wait()
+        for c in self.cmds[:-1]:
+            if c.fd[STDOUT] == PIPE:
+                c.p.stdout.close()
+        return [c.p.returncode for c in self.cmds]
+
+    def spawn(self):
+        """
+        Fork-exec the pipeline but do not wait for its termination.
+
+        After spawned, each self.cmd[i] will have a 'p' attribute that is
+        the spawned subprocess.Popen object.
+
+        Remember that all of [c.p.stdout for c in self.cmd] are open files.
+       """
+        prev = self.cmds[0].fd[STDIN]
+        for c in self.cmds:
+            c.p = c._popen(stdin=prev)
+            prev = c.p.stdout
+        JOBS.append(self)
+        return self
+
+    def capture(self, *fd):
+        """
+        Fork-exec the Cmd and wait for its termination, capturing the
+        output and/or error.
+
+        :param fd: a list of file descriptors to capture, should be a
+        subset of [1, 2] where
+
+          * 1 represents what the children would have written to the
+            parent's stdout
+          * 2 represents what the children would have written to the
+            parent's stderr
+
+        Return a namedtuple (stdout, stderr, exit_status) where stdout and
+        stderr are captured file objects or None and exit_status is a list
+        of all children's exit statuses.
+
+        Don't forget to close the file objects!
+
+        """
+        if not fd:
+            raise ValueError("what do you want to capture?")
+        if isinstance(fd, int):
+            fd = set([fd])
+        else:
+            fd = set(fd) or set([1])
+        if not fd <= set([1, 2]):
+            raise NotImplementedError(
+              "can only capture a subset of fd [1, 2] for now")
+        if 1 in fd and not _is_fileno(1, self.fd[1]):
+            raise ValueError(
+              "cannot capture the last child's stdout: "
+              "it had been redirected to %r"
+                      % _name_or_self(self.fd[1]))
+        temp = None
+        if 2 in fd:
+            self.fd[2] = tempfile.TemporaryFile()
+        ## start piping
+        prev = self.cmds[0].fd[0]
+        for c in self.cmds[:-1]:
+            if not _is_fileno(0, c.fd[0]):
+                prev = c.fd[0]
+            if 2 in fd and _is_fileno(2, c.fd[2]):
+                c.fd[2] = self.fd[2]
+            c.p = c._popen(stdin=prev)
+            prev = c.p.stdout
+        ## prepare and fork the last child
+        c = self.cmds[-1]
+        if not _is_fileno(0, c.fd[0]):
+            prev = c.fd[0]
+        if 1 in fd:
+            ## we made sure that c.fd[1] had not been redirected before
+            c.fd[1] = tempfile.TemporaryFile()
+            self.fd[1] = c.fd[1]
+        if 2 in fd and _is_fileno(2, c.fd[2]):
+            c.fd[2] = self.fd[2]
         c.p = c._popen(stdin=prev)
-        prev = c.p.stdout
-    for c in self.cmds:
-        c.p.wait()
-    for c in self.cmds[:-1]:
-        if c.fd[STDOUT] == PIPE:
-          c.p.stdout.close()
-    return [c.p.returncode for c in self.cmds]
-
-  def spawn(self):
-    """
-    Fork-exec the pipeline but do not wait for its termination.
-
-    After spawned, each self.cmd[i] will have a 'p' attribute that is
-    the spawned subprocess.Popen object.
-
-    Remember that all of [c.p.stdout for c in self.cmd] are open files.
-   """
-    prev = self.cmds[0].fd[STDIN]
-    for c in self.cmds:
-        c.p = c._popen(stdin=prev)
-        prev = c.p.stdout
-    JOBS.append(self)
-    return self
-
-  def capture(self, *fd):
-    """
-    Fork-exec the Cmd and wait for its termination, capturing the
-    output and/or error.
-
-    :param fd: a list of file descriptors to capture, should be a
-    subset of [1, 2] where
-      * 1 represents what the children would have written to the parent's stdout
-      * 2 represents what the children would have written to the parent's stderr
-
-    Return a namedtuple (stdout, stderr, exit_status) where stdout and
-    stderr are captured file objects or None and exit_status is a list
-    of all children's exit statuses.
-
-    Don't forget to close the file objects!
-
-    """
-    if not fd:
-      raise ValueError("what do you want to capture?")
-    if isinstance(fd, int):
-      fd = set([fd])
-    else:
-      fd = set(fd) or set([1])
-    if not fd <= set([1, 2]):
-      raise NotImplementedError(
-        "can only capture a subset of fd [1, 2] for now")
-    if 1 in fd and not _is_fileno(1, self.fd[1]):
-      raise ValueError(
-        "cannot capture the last child's stdout: it had been redirected to %r"
-                % _name_or_self(self.fd[1]))
-    temp = None
-    if 2 in fd:
-      self.fd[2] = tempfile.TemporaryFile()
-    ## start piping
-    prev = self.cmds[0].fd[0]
-    for c in self.cmds[:-1]:
-      if not _is_fileno(0, c.fd[0]):
-        prev = c.fd[0]
-      if 2 in fd and _is_fileno(2, c.fd[2]):
-        c.fd[2] = self.fd[2]
-      c.p = c._popen(stdin=prev)
-      prev = c.p.stdout
-    ## prepare and fork the last child
-    c = self.cmds[-1]
-    if not _is_fileno(0, c.fd[0]):
-      prev = c.fd[0]
-    if 1 in fd:
-      ## we made sure that c.fd[1] had not been redirected before
-      c.fd[1] = tempfile.TemporaryFile()
-      self.fd[1] = c.fd[1]
-    if 2 in fd and _is_fileno(2, c.fd[2]):
-      c.fd[2] = self.fd[2]
-    c.p = c._popen(stdin=prev)
-    ## wait for all children
-    for c in self.cmds:
-      c.p.wait()
-    ## close all unneeded files
-    for c in self.cmds[:-1]:
-      if c.fd[1] == PIPE:
-        c.p.stdout.close()
-    if len(fd) == 1:
-      if 1 in fd and not _is_fileno(2, self.fd[2]): self.fd[2].close()
-      if 2 in fd and not _is_fileno(1, self.fd[1]): self.fd[1].close()
-    if 1 in fd: self.fd[1].seek(0)
-    if 2 in fd: self.fd[2].seek(0)
-    return Capture(self.fd[1], self.fd[2], [c.p.returncode for c in self.cmds])
+        ## wait for all children
+        for c in self.cmds:
+            c.p.wait()
+        ## close all unneeded files
+        for c in self.cmds[:-1]:
+            if c.fd[1] == PIPE:
+              c.p.stdout.close()
+        if len(fd) == 1:
+            if 1 in fd and not _is_fileno(2, self.fd[2]):
+                self.fd[2].close()
+            if 2 in fd and not _is_fileno(1, self.fd[1]):
+                self.fd[1].close()
+        if 1 in fd:
+            self.fd[1].seek(0)
+        if 2 in fd:
+            self.fd[2].seek(0)
+        return Capture(
+            self.fd[1], self.fd[2], [c.p.returncode for c in self.cmds])
 
 
 def here(string):
-  """
-  Make a temporary file from a string for use in redirection.
-  """
-  t = tempfile.TemporaryFile()
-  t.write(string)
-  t.seek(0)
-  return t
+    """
+    Make a temporary file from a string for use in redirection.
+    """
+    t = tempfile.TemporaryFile()
+    t.write(string)
+    t.seek(0)
+    return t
 
 def run(cmd, fd={}, e={}, cd=None):
-  """
-  Perform a fork-exec-wait of a Cmd and return its exit status.
-  """
-  return Cmd(cmd, fd=fd, e=e, cd=cd).run()
+    """
+    Perform a fork-exec-wait of a Cmd and return its exit status.
+    """
+    return Cmd(cmd, fd=fd, e=e, cd=cd).run()
 
 def cmd(cmd, fd={}, e={}, cd=None):
-  """
-  Perform a fork-exec-wait of a Cmd and return the its stdout
-  as a byte string.
-  """
-  f = Cmd(cmd, fd=fd, e=e, cd=cd).capture(1).stdout
-  try:
-    s = f.read()
-  finally:
-    f.close()
-  return s
+    """
+    Perform a fork-exec-wait of a Cmd and return the its stdout
+    as a byte string.
+    """
+    f = Cmd(cmd, fd=fd, e=e, cd=cd).capture(1).stdout
+    try:
+        s = f.read()
+    finally:
+        f.close()
+    return s
 
 def sh(cmd, fd={}, e={}, cd=None):
-  """
-  Perform a fork-exec-wait of a Sh command and return its stdout
-  as a byte string.
-  """
-  f = Sh(cmd, fd=fd, e=e, cd=cd).capture(1).stdout
-  try:
-    s = f.read()
-  finally:
-    f.close()
-  return s
+    """
+    Perform a fork-exec-wait of a Sh command and return its stdout
+    as a byte string.
+    """
+    f = Sh(cmd, fd=fd, e=e, cd=cd).capture(1).stdout
+    try:
+        s = f.read()
+    finally:
+        f.close()
+    return s
 
 def pipe(*cmds, **kwargs):
   """
@@ -421,18 +430,16 @@ def pipe(*cmds, **kwargs):
   """
   f = Pipe(*cmds, **kwargs).capture(1).stdout
   try:
-    s = f.read()
+      s = f.read()
   finally:
-    f.close()
+      f.close()
   return s
 
 def spawn(cmd, fd={}, e={}, cd=None, sh=False):
-  if sh:
-    return Sh(cmd, fd=fd, e=e, cd=cd).spawn()
-  else:
-    return Cmd(cmd, fd=fd, e=e, cd=cd).spawn()
-
-
+    if sh:
+        return Sh(cmd, fd=fd, e=e, cd=cd).spawn()
+    else:
+        return Cmd(cmd, fd=fd, e=e, cd=cd).spawn()
 
 def __failing():
   """
@@ -448,7 +455,7 @@ def __failing():
   """
 
 if __name__ == '__main__':
-  import doctest
-  n = doctest.testmod().failed
-  if n > 0:
-    sys.exit(n)
+    import doctest
+    n = doctest.testmod().failed
+    if n > 0:
+        sys.exit(n)
