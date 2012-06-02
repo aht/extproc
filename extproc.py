@@ -61,8 +61,115 @@ def _is_fileno(n, f):
 def _name_or_self(f):
     return (hasattr(f, 'name') and f.name) or f
 
+class FakeP(object):
+    pass
 
-class Cmd(object):
+class Process(object):
+
+    def _check_redirect_target(self, fd_target, fd_dict):
+        ret_fd_dict = {}
+        if _is_fileno(fd_target, fd_dict[fd_target]):
+            ret_fd_dict[fd_target] = tempfile.TemporaryFile()
+            return ret_fd_dict
+        else:
+            raise ValueError(
+                "cannot capture the child's %d stream: it was redirected to %r"
+                % (fd_target,  _name_or_self(fd_target)))
+
+    def _verify_capture_args(self, fd_a, fd_dict):
+        ret_fd_dict = {}
+        if fd_a not in [1,2]:
+            raise NotImplementedError(
+                "can only capture a subset of fd [1, 2] for now")
+
+        ret_fd_dict = self._check_redirect_target(fd_a, fd_dict)
+        return ret_fd_dict
+
+    def _cleanup_capture(self, fd, p):
+        if fd == STDOUT:
+            if p.stderr:
+                p.stderr.close()
+        else:
+            if p.stdout:
+                p.stdout.close()
+
+
+
+
+    def capture(self, fd):
+        """
+        Fork-exec the Cmd and wait for its termination, capturing the
+        output and/or error.
+
+        :param fd: a list of file descriptors to capture,
+                   should be a subset of [1, 2] where
+          * 1 represents the child's stdout
+          * 2 represents the child's stderr
+
+        Return a namedtuple (stdout, stderr, exit_status) where
+        stdout and stderr are captured file objects or None.
+
+        Don't forget to close the file objects!
+
+       >>> Cmd("/bin/sh -c 'echo -n foo'").capture(1).stdout.read()
+       'foo'
+
+       >>> Cmd("/bin/sh -c 'echo -n bar >&2'").capture(2).stderr.read()
+       'bar'
+
+       """
+        fd_update_dict = self._verify_capture_args(fd, self.fd)
+        self.fd.update(fd_update_dict)
+        p = self._popen()
+        if p.stdin:
+            p.stdin.close()
+        p.wait()
+        self._cleanup_capture(fd, p)
+        self.fd[fd].seek(0)
+        return Capture(self.fd[1], self.fd[2], p.returncode)
+
+    def _orig_capture(self, *fd):
+        if not fd:
+            raise ValueError("what do you want to capture?")
+        if isinstance(fd, int):
+            fd = set([fd])
+        else:
+            fd = set(fd) or set([1])
+        if not fd <= set([1, 2]):
+            raise NotImplementedError(
+                "can only capture a subset of fd [1, 2] for now")
+        if STDOUT in fd:
+            if _is_fileno(STDOUT, self.fd[STDOUT]):
+                self.fd[STDOUT] = tempfile.TemporaryFile()
+            else:
+                raise ValueError(
+                    "cannot capture the child's stdout: it was redirected to %r"
+                    % _name_or_self(self.fd[1]))
+        if 2 in fd:
+            if _is_fileno(2, self.fd[2]):
+                self.fd[2] = tempfile.TemporaryFile()
+            else:
+                raise ValueError(
+                    "cannot capture the child's stderr: it was redirected to %r"
+                    % _name_or_self(self.fd[2]))
+        p = self._popen()
+        if p.stdin:
+            p.stdin.close()
+        p.wait()
+        if len(fd) == 1:
+            if 1 in fd:
+                if p.stderr:
+                    p.stderr.close()
+            else:
+                if p.stdout:
+                    p.stdout.close()
+        if 1 in fd:
+            self.fd[1].seek(0)
+        if 2 in fd:
+            self.fd[2].seek(0)
+        return Capture(self.fd[1], self.fd[2], p.returncode)
+
+class Cmd(Process):
     def __init__(self, cmd, fd={}, e={}, cd=None):
         """
         Prepare for a fork-exec of 'cmd' with information about changing
@@ -122,7 +229,8 @@ class Cmd(object):
 
         for stream_num, fd_num in fd.iteritems():
             if isinstance(fd_num, basestring):
-                self.fd[stream_num] = open(fd_num, 'r' if stream_num == 0 else 'w')
+                new_fd = open(fd_num, 'r' if stream_num == 0 else 'w')
+                self.fd[stream_num] =  new_fd
             elif isinstance(fd_num, int):
                 if stream_num == 2 and fd_num == 1:
                     self.fd[STDERR] = _ORIG_STDOUT
@@ -155,7 +263,6 @@ class Cmd(object):
             for job in JOBS:
                 if job is self:
                     JOBS.remove(self)
-
 
     def wait(self):
         if not getattr(self, 'p', False):
@@ -192,67 +299,6 @@ class Cmd(object):
             JOBS.append(self)
         return self.p
 
-    def capture(self, *fd):
-        """
-        Fork-exec the Cmd and wait for its termination, capturing the
-        output and/or error.
-
-        :param fd: a list of file descriptors to capture,
-                   should be a subset of [1, 2] where
-          * 1 represents the child's stdout
-          * 2 represents the child's stderr
-
-        Return a namedtuple (stdout, stderr, exit_status) where
-        stdout and stderr are captured file objects or None.
-
-        Don't forget to close the file objects!
-
-       >>> Cmd("/bin/sh -c 'echo -n foo'").capture(1).stdout.read()
-       'foo'
-
-       >>> Cmd("/bin/sh -c 'echo -n bar >&2'").capture(2).stderr.read()
-       'bar'
-
-       """
-        if not fd:
-            raise ValueError("what do you want to capture?")
-        if isinstance(fd, int):
-            fd = set([fd])
-        else:
-            fd = set(fd) or set([1])
-        if not fd <= set([1, 2]):
-            raise NotImplementedError(
-              "can only capture a subset of fd [1, 2] for now")
-        if STDOUT in fd:
-            if _is_fileno(STDOUT, self.fd[STDOUT]):
-                self.fd[STDOUT] = tempfile.TemporaryFile()
-            else:
-                raise ValueError(
-                  "cannot capture the child's stdout: it had been redirected to %r"
-                      % _name_or_self(self.fd[1]))
-        if 2 in fd:
-            if _is_fileno(2, self.fd[2]):
-                self.fd[2] = tempfile.TemporaryFile()
-            else:
-                raise ValueError(
-                  "cannot capture the child's stderr: it had been redirected to %r"
-                      % _name_or_self(self.fd[2]))
-        p = self._popen()
-        if p.stdin:
-            p.stdin.close()
-        p.wait()
-        if len(fd) == 1:
-            if 1 in fd:
-                if p.stderr:
-                    p.stderr.close()
-            else:
-                if p.stdout:
-                    p.stdout.close()
-        if 1 in fd:
-            self.fd[1].seek(0)
-        if 2 in fd:
-            self.fd[2].seek(0)
-        return Capture(self.fd[1], self.fd[2], p.returncode)
 
     @property
     def popen_args(self):
@@ -318,6 +364,30 @@ class Pipe(object):
             if c.fd[STDOUT] == PIPE:
                 c.p.stdout.close()
         return [c.p.returncode for c in self.cmds]
+
+    def _popen(self, stdin=0, stdout=1, stderr=2):
+        """
+        Fork-exec the pipeline and wait for its termination.
+
+        Return an array of all children's exit status.
+        """
+        #prev = self.cmds[0].fd[STDIN]
+        prev = stdin
+        for c in self.cmds:
+            c.p = c._popen(stdin=prev)
+            prev = c.p.stdout
+        for c in self.cmds:
+            c.p.wait()
+        for c in self.cmds[:-1]:
+            if c.fd[STDOUT] == PIPE:
+                c.p.stdout.close()
+        fp = FakeP()
+        fp.stdin = self.fd[0]
+        fp.stdout = self.fd[1]
+        fp.stderr = self.fd[2]
+        #fp.stdout = self.cmds[-1].p.stdout
+        return fp
+        #return [c.p.returncode for c in self.cmds]
 
     def spawn(self):
         """
