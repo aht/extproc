@@ -254,10 +254,6 @@ class Pipe(object):
 
     :parameter e: extra environment variables to be exported to all
                   sub-commands, must be a keyword argument
-
-    >>> Pipe(Cmd('yes'), Cmd('cat', {1: os.devnull}))
-    Pipe(Cmd(['yes'], fd={0: 0, 1: -1, 2: 2}, e={}, cd=None),
-         Cmd(['cat'], fd={0: 0, 1: '/dev/null', 2: 2}, e={}, cd=None))
     """
     self.e = kwargs.get('e', {})
     self.env = os.environ.copy()
@@ -279,9 +275,6 @@ class Pipe(object):
     Fork-exec the pipeline and wait for its termination.
 
     Return an array of all children's exit status.
-
-    >>> Pipe(Sh("echo foo"), Sh("cat; echo bar"), Cmd("cat", {1: os.devnull})).run()
-    [0, 0, 0]
     """
     prev = self.cmds[0].fd[STDIN]
     for c in self.cmds:
