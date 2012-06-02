@@ -441,19 +441,6 @@ def spawn(cmd, fd={}, e={}, cd=None, sh=False):
     else:
         return Cmd(cmd, fd=fd, e=e, cd=cd).spawn()
 
-def __failing():
-  """
-  ### test Cmd redirect {1: n}
-  >>> f = tempfile.TemporaryFile()
-  >>> Sh('echo -n foo', {1: f.fileno()}).run()
-  0
-
-  ###>>> f.seek(0); f.read()
-  ###'foo'
-
-
-  """
-
 if __name__ == '__main__':
     import doctest
     n = doctest.testmod().failed

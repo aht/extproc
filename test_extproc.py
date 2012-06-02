@@ -1,6 +1,7 @@
 import unittest
 import time
 import os
+import tempfile
 from extproc import (
     run, Sh, sh, Pipe, pipe, Cmd, here, JOBS, cmd)
 STDIN, STDOUT, STDERR = 0, 1, 2
@@ -64,6 +65,15 @@ class LowerCaseTest(ExtProcTest):
         Pipe(Cmd('yes'), Cmd('cat', {1: os.devnull})).spawn()
         JOBS[-1].cmds[0].p.kill()
         self.assertEquals(JOBS[-1].cmds[-1].p.wait(), 0)
+
+        ### test Cmd redirect {1: n}
+        f = tempfile.TemporaryFile()
+        self.assertEquals(
+            Sh('echo foo', {1: f.fileno()}).run(), 0)
+        f.seek(0)
+        self.assertSh(f.read(), 'foo')
+
+
 
     def test_sh2(self):
         self.assertSh(sh('echo foo >&2', {STDERR: 1}), 'foo')
