@@ -1,12 +1,15 @@
 import unittest
 import os
-from extproc import run, Sh, sh, Pipe
+from extproc import run, Sh, sh, Pipe, pipe, Cmd, here, JOBS
 
 
 def sh_strip(in_):
     in2 = in_.replace('\n','')
     return in2.strip()
 class ExtProcTest(unittest.TestCase):
+
+    def assertSh(self, str1, str2):
+        self.assertEquals(sh_strip(str1), sh_strip(str2))
 
     def test_sanity(self):
         self.assertEquals(run('true'), 0)
@@ -16,14 +19,15 @@ class ExtProcTest(unittest.TestCase):
         sh_call = Sh('echo bar >&2; echo foo; exit 1')
         out, err, status = sh_call.capture(1, 2)
         self.assertEquals(status, 1)
-        # these tests pass on OS X, not sure how they will run on linux
-        self.assertEquals(out.read().strip(), 'foo')
-        self.assertEquals(err.read().strip(), 'bar')
+        # these tests pass on OS X, not sure how they will run on
+        # linux
+        self.assertSh(out.read(), 'foo')
+        self.assertSh(err.read(), 'bar')
+
 
     def test_sh(self):
         """ test Cmd ENV """
-        self.assertEquals(
-            sh('echo $var', e={'var': 'foobar'}).strip(), 'foobar')
+        self.assertSh(sh('echo $var', e={'var': 'foobar'}), 'foobar')
 
         self.assertRaises(
             NotImplementedError,
@@ -35,8 +39,26 @@ class ExtProcTest(unittest.TestCase):
             lambda: sh("echo bogus stuff", {1: os.devnull}))
 
         ### test Pipe stderr capture
-        pipe = Pipe(Sh('echo foo; sleep 0.01; echo  bar >&2'), Sh('cat >&2'))
-        self.assertEquals(sh_strip(pipe.capture(2).stderr.read()), 'foobar')
+        pipe_ = Pipe(Sh('echo foo; sleep 0.01; echo  bar >&2'), Sh('cat >&2'))
+        self.assertSh(pipe_.capture(2).stderr.read(), 'foobar')
+
+        ### test Pipe ENV
+        self.assertSh(
+            pipe(Sh('echo $x'), Sh('cat; echo $x'), e=dict(x='foobar')),
+            'foobarfoobar')
+        ### test Pipe impossible capture
+        self.assertRaises(
+            ValueError,
+            lambda:pipe(Sh("echo bogus"), Cmd("cat", {1: os.devnull})))
+
+        ### test Pipe pathetic case
+        self.assertSh(pipe(Sh("echo foo"), Cmd("cat", {0: here("bar")})), 'bar')
+
+        ### test JOBS
+        self.assertEquals(len(JOBS), 0)
+        Pipe(Cmd('yes'), Cmd('cat', {1: os.devnull})).spawn()
+        JOBS[-1].cmds[0].p.kill()
+        self.assertEquals(JOBS[-1].cmds[-1].p.wait(), 0)
 
 
 
