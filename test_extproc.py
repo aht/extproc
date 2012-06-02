@@ -1,6 +1,7 @@
 import unittest
 import os
-from extproc import run, Sh, sh, Pipe, pipe, Cmd, here, JOBS
+from extproc import (
+    run, Sh, sh, Pipe, pipe, Cmd, here, JOBS, STDIN, STDOUT, STDERR, cmd)
 
 
 def sh_strip(in_):
@@ -60,7 +61,18 @@ class ExtProcTest(unittest.TestCase):
         JOBS[-1].cmds[0].p.kill()
         self.assertEquals(JOBS[-1].cmds[-1].p.wait(), 0)
 
+    def test_sh2(self):
+        self.assertSh(sh('echo foo >&2', {STDERR: 1}), 'foo')
 
+    def test_cmd(self):
+        self.assertSh(
+            cmd(['/bin/sh', '-c', 'echo foo; echo bar >&2'], {2: 1}), 'foobar')
+
+    def test_run(self):
+        self.assertEquals(run('cat /dev/null'), 0)
+
+    def test_here(self):
+        self.assertSh(cmd('cat', {0: here("foo bar")}), 'foo bar')
 
 
 

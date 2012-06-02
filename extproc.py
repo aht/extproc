@@ -390,9 +390,6 @@ class Pipe(object):
 def here(string):
   """
   Make a temporary file from a string for use in redirection.
-
-  >>> cmd('cat', {0: here("foo bar")})
-  'foo bar'
   """
   t = tempfile.TemporaryFile()
   t.write(string)
@@ -402,9 +399,6 @@ def here(string):
 def run(cmd, fd={}, e={}, cd=None):
   """
   Perform a fork-exec-wait of a Cmd and return its exit status.
-
-  >>> run('cat /dev/null')
-  0
   """
   return Cmd(cmd, fd=fd, e=e, cd=cd).run()
 
@@ -412,9 +406,6 @@ def cmd(cmd, fd={}, e={}, cd=None):
   """
   Perform a fork-exec-wait of a Cmd and return the its stdout
   as a byte string.
-
-  >>> cmd(['/bin/sh', '-c', 'echo foo; echo bar >&2'], {2: 1})
-  'foo\\nbar\\n'
   """
   f = Cmd(cmd, fd=fd, e=e, cd=cd).capture(1).stdout
   try:
@@ -427,9 +418,6 @@ def sh(cmd, fd={}, e={}, cd=None):
   """
   Perform a fork-exec-wait of a Sh command and return its stdout
   as a byte string.
-  ###>>> sh('echo -n foo >&2', {2: 1})
-  ###'foo'
-
   """
   f = Sh(cmd, fd=fd, e=e, cd=cd).capture(1).stdout
   try:
