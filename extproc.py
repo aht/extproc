@@ -320,7 +320,8 @@ class Pipe(object):
     Fork-exec the Cmd and wait for its termination, capturing the
     output and/or error.
 
-    :param fd: a list of file descriptors to capture, should be a subset of [1, 2] where
+    :param fd: a list of file descriptors to capture, should be a
+    subset of [1, 2] where
       * 1 represents what the children would have written to the parent's stdout
       * 2 represents what the children would have written to the parent's stderr
 
@@ -330,11 +331,6 @@ class Pipe(object):
 
     Don't forget to close the file objects!
 
-    ###>>> Pipe(Sh('echo -n foo; echo -n bar >&2', {2: os.devnull}), Cmd('cat')).capture(1).stdout.read()
-    ###'foo'
-
-    ###>>> Pipe(Sh('echo -n foo; echo -n bar >&2'), Cmd('cat', {1: os.devnull})).capture(2).stderr.read()
-    ###'bar'
     """
     if not fd:
       raise ValueError("what do you want to capture?")

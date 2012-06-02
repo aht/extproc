@@ -1,4 +1,5 @@
 import unittest
+import time
 import os
 from extproc import (
     run, Sh, sh, Pipe, pipe, Cmd, here, JOBS, STDIN, STDOUT, STDERR, cmd)
@@ -11,6 +12,9 @@ class ExtProcTest(unittest.TestCase):
 
     def assertSh(self, str1, str2):
         self.assertEquals(sh_strip(str1), sh_strip(str2))
+
+class LowerCaseTest(ExtProcTest):
+    """ test the lowercase convience functions """
 
     def test_sanity(self):
         self.assertEquals(run('true'), 0)
@@ -74,6 +78,25 @@ class ExtProcTest(unittest.TestCase):
     def test_here(self):
         self.assertSh(cmd('cat', {0: here("foo bar")}), 'foo bar')
 
+class ExtProcPipeTest(ExtProcTest):
+
+    def test_capture(self):
+        self.assertSh(
+            Pipe(Sh('echo foo; echo bar >&2', {2: os.devnull}),
+                 Cmd('cat')).capture(1).stdout.read(),
+            'foo')
+
+        self.assertSh(
+            Pipe(Sh('echo foo; echo bar >&2'),
+                 Cmd('cat', {1: os.devnull})).capture(2).stderr.read(),
+            'bar')
+
+    def test_spawn(self):
+        yesno = Pipe(Cmd('yes'), Cmd(['grep', 'no'])).spawn()
+        time.sleep(0.5)
+        yesno.cmds[0].p.kill()
+        time.sleep(0.5)
+        self.assertEquals(yesno.cmds[-1].p.wait(), 1)
 
 
 if __name__ == '__main__':
