@@ -295,12 +295,7 @@ class Pipe(object):
     the spawned subprocess.Popen object.
 
     Remember that all of [c.p.stdout for c in self.cmd] are open files.
-
-    >>> yesno = Pipe(Cmd('yes'), Cmd(['grep', 'no'])).spawn()
-    >>> yesno.cmds[0].p.kill()
-    >>> yesno.cmds[-1].p.wait()
-    1
-    """
+   """
     prev = self.cmds[0].fd[STDIN]
     for c in self.cmds:
       c.p = c._popen(stdin=prev)
