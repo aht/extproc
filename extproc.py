@@ -285,6 +285,10 @@ class Cmd(Process):
         return self.p.fd_objs
 
     @property
+    def returncode(self):
+        return self.p.returncode
+
+    @property
     def popen_args(self):
         return dict(args=self.cmd, cwd=self.cd, env=self.env,
           stdin=self.fd_objs[0], stdout=self.fd_objs[1], stderr=self.fd_objs[2])
@@ -354,11 +358,12 @@ class Pipe(Process):
             c._popen(stdin=prev)
             prev = c.running_fd_objs[STDOUT]
         for c in self.cmds:
-            c.p.wait()
+            c.wait()
         for c in self.cmds[:-1]:
             if c.fd_objs[STDOUT] == PIPE:
                 c.running_fd_objs[STDOUT].close()
-        return [c.p.returncode for c in self.cmds]
+
+        return [c.returncode for c in self.cmds]
 
     def _popen(self, stdin=0, stdout=1, stderr=2):
         """
@@ -471,7 +476,7 @@ class Pipe(Process):
         c._popen(stdin=prev)
         ## wait for all children
         for c in self.cmds:
-            c.p.wait()
+            c.wait()
         ## close all unneeded files
         for c in self.cmds[:-1]:
             if c.fd_objs[STDOUT] == PIPE:
@@ -484,7 +489,7 @@ class Pipe(Process):
 
         return Capture(
             self.fd_objs[1], self.fd_objs[2],
-            [c.p.returncode for c in self.cmds])
+            [c.returncode for c in self.cmds])
 
 if __name__ == '__main__':
     import doctest
