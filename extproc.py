@@ -394,7 +394,7 @@ class Pipe(Process):
                     JOBS.remove(self)
 
 
-    def capture(self, fd):
+    def capture(self, *fd):
         """
         Fork-exec the Cmd and wait for its termination, capturing the
         output and/or error.
@@ -414,27 +414,32 @@ class Pipe(Process):
         Don't forget to close the file objects!
 
         """
+        assert len(fd) > 0
+        for descriptor in fd:
+            fd_update_dict = self._verify_capture_args(descriptor, self.fd)
+            self.fd.update(fd_update_dict)
 
-        fd_update_dict = self._verify_capture_args(fd, self.fd)
-        self.fd.update(fd_update_dict)
+        if STDERR in fd:
+            self.fd[STDERR] = tempfile.TemporaryFile()
+
         ## start piping
         prev = self.cmds[0].fd[0]
         for c in self.cmds[:-1]:
             if not _is_fileno(STDIN, c.fd[STDIN]):
                 prev = c.fd[STDIN]
-            if 2 == fd and _is_fileno(2, c.fd[2]):
-                c.fd[2] = self.fd[2]
+            if STDERR in fd and _is_fileno(STDERR, c.fd[STDERR]):
+                c.fd[STDERR] = self.fd[STDERR]
             c.p = c._popen(stdin=prev)
             prev = c.p.stdout
         ## prepare and fork the last child
         c = self.cmds[-1]
         if not _is_fileno(STDIN, c.fd[STDIN]):
             prev = c.fd[STDIN]
-        if STDOUT == fd:
+        if STDOUT in fd:
             ## we made sure that c.fd[1] had not been redirected before
             c.fd[STDOUT] = tempfile.TemporaryFile()
             self.fd[STDOUT] = c.fd[STDOUT]
-        if STDERR == fd and _is_fileno(STDERR, c.fd[STDERR]):
+        if STDERR in fd and _is_fileno(STDERR, c.fd[STDERR]):
             c.fd[STDERR] = self.fd[STDERR]
         c.p = c._popen(stdin=prev)
         ## wait for all children
@@ -444,9 +449,11 @@ class Pipe(Process):
         for c in self.cmds[:-1]:
             if c.fd[STDOUT] == PIPE:
               c.p.stdout.close()
-
-        self._cleanup_capture_dict(fd, self.fd)
-        self.fd[fd].seek(0)
+        if not set(fd) == set([1,2]):
+            #self._cleanup_capture(fd[0], p)
+            self._cleanup_capture_dict(fd[0], self.fd)
+        for descriptor in fd:
+            self.fd[descriptor].seek(0)
 
         return Capture(
             self.fd[1], self.fd[2], [c.p.returncode for c in self.cmds])
