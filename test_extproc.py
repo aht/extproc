@@ -3,8 +3,8 @@ import unittest
 import time
 import os
 import tempfile
-from extproc import (
-    run, Sh, sh, Pipe, pipe, Cmd, here, JOBS, cmd)
+from extproc import Sh, Pipe, Cmd, JOBS
+from convience import run, sh, pipe, here, cmd
 STDIN, STDOUT, STDERR = 0, 1, 2
 
 def sh_strip(in_):
