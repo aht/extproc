@@ -41,7 +41,7 @@ import shlex
 import subprocess
 import sys
 import tempfile
-
+import pdb
 
 STDIN, STDOUT, STDERR = 0, 1, 2
 DEFAULT_FD = {STDIN: 0, STDOUT: 1, STDERR: 2}
@@ -157,6 +157,13 @@ class Process(object):
         else:
             assert 1==2, "fd_descriptors must be a string\
                           stream number or file"
+    @property
+    def popen_args(self):
+        return dict(
+            args=self.cmd, cwd=self.cd, env=self.env,
+            stdin=self.fd_objs[0],
+            stdout=self.fd_objs[1],
+            stderr=self.fd_objs[2])
 
 
 class Cmd(Process):
@@ -288,11 +295,6 @@ class Cmd(Process):
     def returncode(self):
         return self.p.returncode
 
-    @property
-    def popen_args(self):
-        return dict(args=self.cmd, cwd=self.cd, env=self.env,
-          stdin=self.fd_objs[0], stdout=self.fd_objs[1], stderr=self.fd_objs[2])
-
     def _popen(self, **kwargs):
         basic_popen_args = self.popen_args
         basic_popen_args.update(kwargs)
@@ -341,8 +343,11 @@ class Pipe(Process):
 
         self.fd_objs = {STDIN: cmds[0].fd_objs[STDIN],
                    STDOUT: cmds[-1].fd_objs[STDOUT],
-                   STDERR: STDERR}
+                   STDERR:  cmds[-1].fd_objs[STDERR]}
+
         self.cmds = cmds
+        self.cmd = "PIPE, not a real command"
+        self.cd = self.cmds[0].cd
 
     def __repr__(self):
         return "Pipe(%s)" % (",\n     ".join(map(repr, self.cmds)),)
@@ -363,31 +368,24 @@ class Pipe(Process):
             if c.fd_objs[STDOUT] == PIPE:
                 c.running_fd_objs[STDOUT].close()
 
+        return self.returncode
+
+    @property
+    def returncode(self):
+        for c in self.cmds:
+            if not c.returncode == 0:
+                return c.returncode
+        return 0
+
+    @property
+    def returncodes(self):
         return [c.returncode for c in self.cmds]
 
-    def _popen(self, stdin=0, stdout=1, stderr=2):
-        """
-        Fork-exec the pipeline and wait for its termination.
-
-        Return an array of all children's exit status.
-        """
-        #prev = self.cmds[0].fd[STDIN]
-        prev = stdin
-        for c in self.cmds:
-            c.p = c._popen(stdin=prev)
-            prev = c.p.stdout
-        for c in self.cmds:
-            c.p.wait()
-        for c in self.cmds[:-1]:
-            if c.fd[STDOUT] == PIPE:
-                c.p.stdout.close()
-        fp = FakeP()
-        fp.stdin = self.fd[0]
-        fp.stdout = self.fd[1]
-        fp.stderr = self.fd[2]
-        #fp.stdout = self.cmds[-1].p.stdout
-        return fp
-        #return [c.p.returncode for c in self.cmds]
+    @property
+    def running_fd_objs(self):
+        return {STDIN:self.cmds[0].running_fd_objs[STDIN],
+                STDOUT:self.cmds[-1].running_fd_objs[STDOUT],
+                STDERR:self.cmds[-1].running_fd_objs[STDERR]}
 
     def spawn(self):
         """
@@ -468,7 +466,7 @@ class Pipe(Process):
         if not _is_fileno(STDIN, c.fd_objs[STDIN]):
             prev = c.fd_objs[STDIN]
         if STDOUT in fd:
-            ## we made sure that c.fd[1] had not been redirected before
+            ## we made sure that c.fd[STDOUT] had not been redirected before
             c.fd_objs[STDOUT] = tempfile.TemporaryFile()
             self.fd_objs[STDOUT] = c.fd_objs[STDOUT]
         if STDERR in fd and _is_fileno(STDERR, c.fd_objs[STDERR]):
@@ -485,11 +483,40 @@ class Pipe(Process):
             #self._cleanup_capture(fd[0], p)
             self._cleanup_capture_dict(fd[0], self.fd_objs)
         for descriptor in fd:
+            #self.running_fd_objs[descriptor].seek(0)
             self.fd_objs[descriptor].seek(0)
 
         return Capture(
-            self.fd_objs[1], self.fd_objs[2],
-            [c.returncode for c in self.cmds])
+             self.fd_objs[STDOUT],
+            self.fd_objs[STDERR],
+
+            self.returncode)
+
+    def _popen(self, **kwargs):
+        """
+        Fork-exec the pipeline and wait for its termination.
+
+        Return an array of all children's exit status.
+        """
+        basic_popen_args = self.popen_args
+        basic_popen_args.update(kwargs)
+
+        prev = basic_popen_args['stdin']
+        #pdb.set_trace()
+        for c in self.cmds[:-1]:
+            c._popen(stdin=prev, stdout=PIPE)
+            prev = c.running_fd_objs[STDOUT]
+
+        self.cmds[-1]._popen(
+            stdin=prev,
+            stdout=basic_popen_args['stdout'])
+
+        for c in self.cmds:
+            c.wait()
+        for c in self.cmds[:-1]:
+            if c.fd_objs[STDOUT] == PIPE:
+                c.running_fd_objs[STDOUT].close()
+
 
 if __name__ == '__main__':
     import doctest

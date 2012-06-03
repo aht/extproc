@@ -100,14 +100,26 @@ class ExtProcPipeTest(ExtProcTest):
         Pipe(Cmd(['yes'], fd={0: 0, 1: -1, 2: 2}, e={}, cd=None),
              Cmd(['cat'], fd={0: 0, 1: '/dev/null', 2: 2}, e={}, cd=None))
 
+    def test_pipe_proc_interface(self):
+        ### test Pipe ENV
+        pipe_obj = Pipe(Pipe(Cmd("/bin/sh -c 'echo foo'")))
+
+        self.assertSh(pipe_obj.capture(1).stdout.read(), 'foo')
+
     def _test_pipe_composable(self):
         """we should be able to compose pipes of pipes """
 
-        cmd_a = Cmd('echo foo')
-        pdb.set_trace()
-        ab = cmd_a._popen()
+        self.assertEquals(
+            Pipe(Pipe(Sh("echo foo")),
+                 Pipe(Sh("cat; echo bar")),
+                 Pipe(Cmd("cat", {1: os.devnull}))).run(),
+            [0,0,0])
 
-        self.assertSh(ab.stdout.read(), 'foo')
+        pipe_a = Pipe(Cmd('echo foo'))
+        pdb.set_trace()
+        ab = pipe_a._popen()
+
+        self.assertSh(pipe_a.running_fd_objs[STDOUT].read(), 'foo')
 
     def _asfd(self):
         pipe_a=Pipe(Cmd('ls /usr/local/Cellar'))
@@ -122,11 +134,12 @@ class ExtProcPipeTest(ExtProcTest):
 
 
     def test_run(self):
-        self.assertEquals(
-            Pipe(Sh("echo foo"),
-                 Sh("cat; echo bar"),
-                 Cmd("cat", {1: os.devnull})).run(),
-            [0,0,0])
+        pipe_obj = Pipe(Sh("echo foo"),
+                        Sh("cat; echo bar"),
+                        Cmd("cat", {1: os.devnull}))
+
+        self.assertEquals(pipe_obj.run(), 0)
+        self.assertEquals(pipe_obj.returncodes, [0,0,0])
 
     def test_spawn(self):
         self.assertEquals(len(JOBS), 0)
@@ -162,7 +175,7 @@ class ExtProcPipeTest(ExtProcTest):
 
         sh_call = Pipe(Sh('echo bar >&2; echo foo; exit 1'))
         out, err, status = sh_call.capture(1, 2)
-        self.assertEquals(status, [1])
+        self.assertEquals(status, 1)
         # these tests pass on OS X, not sure how they will run on
         # linux
         self.assertSh(out.read(), 'foo')
@@ -192,6 +205,12 @@ class ExtProcCmdTest(ExtProcTest):
         ab.spawn()
         self.assertRaises(Exception, lambda: ab.spawn())
 
+
+    def test_popen_fd_semantics(self):
+        tf = tempfile.TemporaryFile()
+        ab = Cmd('yes', {STDOUT: tf})
+        ab._popen()
+        self.assertTrue(tf is ab.fd_objs[STDOUT])
 
 if __name__ == '__main__':
     unittest.main()
