@@ -130,11 +130,24 @@ class ExtProcPipeTest(ExtProcTest):
 
     def test_spawn(self):
         self.assertEquals(len(JOBS), 0)
+        " yes | grep no"
         yesno = Pipe(Cmd('yes'), Cmd(['grep', 'no'])).spawn()
         yesno.cmds[0].p.kill()
-        #self.assertEquals(yesno.cmds[-1].p.wait(), 1)
+        self.assertEquals(yesno.cmds[-1].p.wait(), 1)
         self.assertEquals(yesno.wait(), 1)
         self.assertEquals(len(JOBS), 0)
+
+    def chriss_recommended_syntax(self):
+        '''
+        ls().pipe_to(grep("pyc")).pipe_to(...)
+        grep_example = Pipe(
+            ls(),
+            grep("pyc")
+            )
+
+        output =
+        '''
+
 
     def test_capture(self):
         self.assertSh(
