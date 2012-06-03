@@ -36,3 +36,27 @@ proc_obj = subprocess.Popen('ls', stdout=-1)
 py_pipe_obj = triple_lines(proc_obj.stdout)
 proc_obj2 = subprocess.Popen(['wc', '-l'], stdin=py_pipe_obj.stdout, stdout=-1)
 print proc_obj2.stdout.read()
+
+
+@fork_decorator
+def triple_lines(in_file, out_file):
+    for line in in_file:
+
+        Pipe(Sh("echo foo"), Sh("cat; echo bar"), triple_lines, Cmd("cat", {1: os.devnull})).run()
+
+class PyForkable(object):
+    """ this is the object that wraps a python function that is to be
+    used in a Pipe sequence, it implements the interface of command
+    
+    Ideally
+    """
+    def __init__(self, f):
+        self.f = f
+        self.fd = {}
+
+    def _popen(self, stdin=0, stdout=1, stderr=2):
+        
+
+        def make_forkable(f):
+            """ this is the actual decorator that is wrapped around a function  """
+
