@@ -137,47 +137,6 @@ class Process(object):
             self.fd[descriptor].seek(0)
         return Capture(self.fd[1], self.fd[2], p.returncode)
 
-    def _orig_capture(self, *fd):
-        if not fd:
-            raise ValueError("what do you want to capture?")
-        if isinstance(fd, int):
-            fd = set([fd])
-        else:
-            fd = set(fd) or set([1])
-        if not fd <= set([1, 2]):
-            raise NotImplementedError(
-                "can only capture a subset of fd [1, 2] for now")
-        if STDOUT in fd:
-            if _is_fileno(STDOUT, self.fd[STDOUT]):
-                self.fd[STDOUT] = tempfile.TemporaryFile()
-            else:
-                raise ValueError(
-                    "cannot capture the child's stdout: it was redirected to %r"
-                    % _name_or_self(self.fd[1]))
-        if 2 in fd:
-            if _is_fileno(2, self.fd[2]):
-                self.fd[2] = tempfile.TemporaryFile()
-            else:
-                raise ValueError(
-                    "cannot capture the child's stderr: it was redirected to %r"
-                    % _name_or_self(self.fd[2]))
-        p = self._popen()
-        if p.stdin:
-            p.stdin.close()
-        p.wait()
-        if len(fd) == 1:
-            if 1 in fd:
-                if p.stderr:
-                    p.stderr.close()
-            else:
-                if p.stdout:
-                    p.stdout.close()
-        if 1 in fd:
-            self.fd[1].seek(0)
-        if 2 in fd:
-            self.fd[2].seek(0)
-        return Capture(self.fd[1], self.fd[2], p.returncode)
-
 class Cmd(Process):
     def __init__(self, cmd, fd={}, e={}, cd=None):
         """
