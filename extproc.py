@@ -98,8 +98,8 @@ class Process(object):
             target = STDERR
         else:
             target = STDOUT
-        if not _is_fileno(target, self.fd[target]):
-            self.fd[target].close()
+        if not _is_fileno(target, fd_dict[target]):
+            fd_dict[target].close()
 
     def capture(self, *fd):
         """
@@ -331,7 +331,7 @@ class Pipe(Process):
             if _is_fileno(1, c.fd_objs[STDOUT]):
               c.fd_objs[STDOUT] = PIPE
 
-        self.fd = {STDIN: cmds[0].fd_objs[STDIN],
+        self.fd_objs = {STDIN: cmds[0].fd_objs[STDIN],
                    STDOUT: cmds[-1].fd_objs[STDOUT],
                    STDERR: STDERR}
         self.cmds = cmds
@@ -439,19 +439,19 @@ class Pipe(Process):
         """
         assert len(fd) > 0
         for descriptor in fd:
-            fd_update_dict = self._verify_capture_args(descriptor, self.fd)
-            self.fd.update(fd_update_dict)
+            fd_update_dict = self._verify_capture_args(descriptor, self.fd_objs)
+            self.fd_objs.update(fd_update_dict)
 
         if STDERR in fd:
-            self.fd[STDERR] = tempfile.TemporaryFile()
+            self.fd_objs[STDERR] = tempfile.TemporaryFile()
 
         ## start piping
         prev = self.cmds[0].fd_objs[0]
         for c in self.cmds[:-1]:
             if not _is_fileno(STDIN, c.fd_objs[STDIN]):
-                prev = c.fd[STDIN]
+                prev = c.fd_objs[STDIN]
             if STDERR in fd and _is_fileno(STDERR, c.fd_objs[STDERR]):
-                c.fd_objs[STDERR] = self.fd[STDERR]
+                c.fd_objs[STDERR] = self.fd_objs[STDERR]
             c.p = c._popen(stdin=prev)
             prev = c.p.stdout
         ## prepare and fork the last child
@@ -461,9 +461,9 @@ class Pipe(Process):
         if STDOUT in fd:
             ## we made sure that c.fd[1] had not been redirected before
             c.fd_objs[STDOUT] = tempfile.TemporaryFile()
-            self.fd[STDOUT] = c.fd_objs[STDOUT]
+            self.fd_objs[STDOUT] = c.fd_objs[STDOUT]
         if STDERR in fd and _is_fileno(STDERR, c.fd_objs[STDERR]):
-            c.fd_objs[STDERR] = self.fd[STDERR]
+            c.fd_objs[STDERR] = self.fd_objs[STDERR]
         c.p = c._popen(stdin=prev)
         ## wait for all children
         for c in self.cmds:
@@ -474,12 +474,13 @@ class Pipe(Process):
               c.p.stdout.close()
         if not set(fd) == set([1,2]):
             #self._cleanup_capture(fd[0], p)
-            self._cleanup_capture_dict(fd[0], self.fd)
+            self._cleanup_capture_dict(fd[0], self.fd_objs)
         for descriptor in fd:
-            self.fd[descriptor].seek(0)
+            self.fd_objs[descriptor].seek(0)
 
         return Capture(
-            self.fd[1], self.fd[2], [c.p.returncode for c in self.cmds])
+            self.fd_objs[1], self.fd_objs[2],
+            [c.p.returncode for c in self.cmds])
 
 if __name__ == '__main__':
     import doctest
