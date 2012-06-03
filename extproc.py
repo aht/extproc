@@ -85,20 +85,13 @@ class Process(object):
         ret_fd_dict = self._check_redirect_target(fd_a, fd_dict)
         return ret_fd_dict
 
-    def _cleanup_capture(self, fd, p):
-        if fd == STDOUT:
-            if p.stderr:
-                p.stderr.close()
-        else:
-            if p.stdout:
-                p.stdout.close()
-
     def _cleanup_capture_dict(self, fd, fd_dict):
         if fd == STDOUT:
             target = STDERR
         else:
             target = STDOUT
-        if not _is_fileno(target, fd_dict[target]):
+        target_obj = fd_dict[target]
+        if not _is_fileno(target, target_obj) and isinstance(target_obj, file):
             fd_dict[target].close()
 
     def capture(self, *fd):
@@ -132,10 +125,11 @@ class Process(object):
             p.stdin.close()
         p.wait()
         if not set(fd) == set([1,2]):
-            self._cleanup_capture(fd[0], p)
+             self._cleanup_capture_dict(fd[0], p.fd_objs)
         for stream_number in fd:
             self.fd_objs[stream_number].seek(0)
         return Capture(self.fd_objs[1], self.fd_objs[2], p.returncode)
+
     def _process_fd_pair(self, stream_num, fd_descriptor):
         """for now this just does error checking
 
@@ -181,8 +175,6 @@ class Cmd(Process):
     objects, or number flags
 
     """
-
-
     def __init__(self, cmd, fd={}, e={}, cd=None):
         """
         Prepare for a fork-exec of 'cmd' with information about changing
@@ -296,7 +288,14 @@ class Cmd(Process):
     def _popen(self, **kwargs):
         basic_popen_args = self.popen_args
         basic_popen_args.update(kwargs)
-        return subprocess.Popen(**basic_popen_args)
+        return decorate_popen(subprocess.Popen(**basic_popen_args))
+
+def decorate_popen(popen_obj):
+    popen_obj.fd_objs = {
+        STDIN:popen_obj.stdin,
+        STDOUT:popen_obj.stdout,
+        STDERR:popen_obj.stderr}
+    return popen_obj
 
 class Sh(Cmd):
   def __init__(self, cmd, fd={}, e={}, cd=None):
