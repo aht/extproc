@@ -93,8 +93,13 @@ class Process(object):
             if p.stdout:
                 p.stdout.close()
 
-
-
+    def _cleanup_capture_dict(self, fd, fd_dict):
+        if fd == STDOUT:
+            target = STDERR
+        else:
+            target = STDOUT
+        if not _is_fileno(target, self.fd[target]):
+            self.fd[target].close()
 
     def capture(self, fd):
         """
@@ -325,7 +330,7 @@ class Sh(Cmd):
                 ), self.e, self.cd)
 
 
-class Pipe(object):
+class Pipe(Process):
     def __init__(self, *cmds, **kwargs):
         """
         Prepare a pipeline from a list of Cmd's.
@@ -426,7 +431,7 @@ class Pipe(object):
                     JOBS.remove(self)
 
 
-    def capture(self, *fd):
+    def capture(self, fd):
         """
         Fork-exec the Cmd and wait for its termination, capturing the
         output and/or error.
@@ -446,62 +451,42 @@ class Pipe(object):
         Don't forget to close the file objects!
 
         """
-        if not fd:
-            raise ValueError("what do you want to capture?")
-        if isinstance(fd, int):
-            fd = set([fd])
-        else:
-            fd = set(fd) or set([1])
-        if not fd <= set([1, 2]):
-            raise NotImplementedError(
-              "can only capture a subset of fd [1, 2] for now")
-        if 1 in fd and not _is_fileno(1, self.fd[1]):
-            raise ValueError(
-              "cannot capture the last child's stdout: "
-              "it had been redirected to %r"
-                      % _name_or_self(self.fd[1]))
-        temp = None
-        if 2 in fd:
-            self.fd[2] = tempfile.TemporaryFile()
+
+        fd_update_dict = self._verify_capture_args(fd, self.fd)
+        self.fd.update(fd_update_dict)
         ## start piping
         prev = self.cmds[0].fd[0]
         for c in self.cmds[:-1]:
-            if not _is_fileno(0, c.fd[0]):
-                prev = c.fd[0]
-            if 2 in fd and _is_fileno(2, c.fd[2]):
+            if not _is_fileno(STDIN, c.fd[STDIN]):
+                prev = c.fd[STDIN]
+            if 2 == fd and _is_fileno(2, c.fd[2]):
                 c.fd[2] = self.fd[2]
             c.p = c._popen(stdin=prev)
             prev = c.p.stdout
         ## prepare and fork the last child
         c = self.cmds[-1]
-        if not _is_fileno(0, c.fd[0]):
-            prev = c.fd[0]
-        if 1 in fd:
+        if not _is_fileno(STDIN, c.fd[STDIN]):
+            prev = c.fd[STDIN]
+        if STDOUT == fd:
             ## we made sure that c.fd[1] had not been redirected before
-            c.fd[1] = tempfile.TemporaryFile()
-            self.fd[1] = c.fd[1]
-        if 2 in fd and _is_fileno(2, c.fd[2]):
-            c.fd[2] = self.fd[2]
+            c.fd[STDOUT] = tempfile.TemporaryFile()
+            self.fd[STDOUT] = c.fd[STDOUT]
+        if STDERR == fd and _is_fileno(STDERR, c.fd[STDERR]):
+            c.fd[STDERR] = self.fd[STDERR]
         c.p = c._popen(stdin=prev)
         ## wait for all children
         for c in self.cmds:
             c.p.wait()
         ## close all unneeded files
         for c in self.cmds[:-1]:
-            if c.fd[1] == PIPE:
+            if c.fd[STDOUT] == PIPE:
               c.p.stdout.close()
-        if len(fd) == 1:
-            if 1 in fd and not _is_fileno(2, self.fd[2]):
-                self.fd[2].close()
-            if 2 in fd and not _is_fileno(1, self.fd[1]):
-                self.fd[1].close()
-        if 1 in fd:
-            self.fd[1].seek(0)
-        if 2 in fd:
-            self.fd[2].seek(0)
+
+        self._cleanup_capture_dict(fd, self.fd)
+        self.fd[fd].seek(0)
+
         return Capture(
             self.fd[1], self.fd[2], [c.p.returncode for c in self.cmds])
-
 
 def here(string):
     """
