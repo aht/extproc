@@ -121,8 +121,8 @@ class Process(object):
             fd_update_dict = self._verify_capture_args(stream_num, self.fd_objs)
             self.fd_objs.update(fd_update_dict)
         p = self._popen()
-        if p.stdin:
-            p.stdin.close()
+        if p.fd_objs[STDIN]:
+            p.fd_objs[STDIN].close()
         p.wait()
         if not set(fd) == set([1,2]):
              self._cleanup_capture_dict(fd[0], p.fd_objs)
@@ -255,6 +255,7 @@ class Cmd(Process):
                     JOBS.remove(self)
 
 
+
     def run(self):
         """
         Fork-exec the Cmd and waits for its termination.
@@ -274,11 +275,14 @@ class Cmd(Process):
         """
         if getattr(self, 'p', False):
             raise Exception('can only spawn once per cmd object')
-        self.p = self._popen()
+        self._popen()
         if append_to_jobs:
             JOBS.append(self)
         return self.p
 
+    @property
+    def running_fd_objs(self):
+        return self.p.fd_objs
 
     @property
     def popen_args(self):
@@ -288,7 +292,8 @@ class Cmd(Process):
     def _popen(self, **kwargs):
         basic_popen_args = self.popen_args
         basic_popen_args.update(kwargs)
-        return decorate_popen(subprocess.Popen(**basic_popen_args))
+        self.p = decorate_popen(subprocess.Popen(**basic_popen_args))
+        return self.p
 
 def decorate_popen(popen_obj):
     popen_obj.fd_objs = {
@@ -346,13 +351,13 @@ class Pipe(Process):
         """
         prev = self.cmds[0].fd_objs[STDIN]
         for c in self.cmds:
-            c.p = c._popen(stdin=prev)
-            prev = c.p.stdout
+            c._popen(stdin=prev)
+            prev = c.running_fd_objs[STDOUT]
         for c in self.cmds:
             c.p.wait()
         for c in self.cmds[:-1]:
             if c.fd_objs[STDOUT] == PIPE:
-                c.p.stdout.close()
+                c.running_fd_objs[STDOUT].close()
         return [c.p.returncode for c in self.cmds]
 
     def _popen(self, stdin=0, stdout=1, stderr=2):
@@ -393,8 +398,8 @@ class Pipe(Process):
 
         prev = self.cmds[0].fd_objs[STDIN]
         for c in self.cmds:
-            c.p = c._popen(stdin=prev)
-            prev = c.p.stdout
+            c._popen(stdin=prev)
+            prev = c.running_fd_objs[STDOUT]
         JOBS.append(self)
         return self
 
@@ -451,8 +456,8 @@ class Pipe(Process):
                 prev = c.fd_objs[STDIN]
             if STDERR in fd and _is_fileno(STDERR, c.fd_objs[STDERR]):
                 c.fd_objs[STDERR] = self.fd_objs[STDERR]
-            c.p = c._popen(stdin=prev)
-            prev = c.p.stdout
+            c._popen(stdin=prev)
+            prev = c.running_fd_objs[STDOUT]
         ## prepare and fork the last child
         c = self.cmds[-1]
         if not _is_fileno(STDIN, c.fd_objs[STDIN]):
@@ -463,14 +468,14 @@ class Pipe(Process):
             self.fd_objs[STDOUT] = c.fd_objs[STDOUT]
         if STDERR in fd and _is_fileno(STDERR, c.fd_objs[STDERR]):
             c.fd_objs[STDERR] = self.fd_objs[STDERR]
-        c.p = c._popen(stdin=prev)
+        c._popen(stdin=prev)
         ## wait for all children
         for c in self.cmds:
             c.p.wait()
         ## close all unneeded files
         for c in self.cmds[:-1]:
             if c.fd_objs[STDOUT] == PIPE:
-              c.p.stdout.close()
+              c.running_fd_objs[STDOUT].close()
         if not set(fd) == set([1,2]):
             #self._cleanup_capture(fd[0], p)
             self._cleanup_capture_dict(fd[0], self.fd_objs)
