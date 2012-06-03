@@ -184,7 +184,7 @@ class Cmd(Process):
 
 
     def __init__(self, cmd, fd={}, e={}, cd=None):
-       """
+        """
         Prepare for a fork-exec of 'cmd' with information about changing
         of working directory, extra environment variables and I/O
         redirections if necessary.
