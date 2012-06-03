@@ -124,21 +124,78 @@ class Process(object):
 
        """
         assert len(fd) > 0
-        for descriptor in fd:
-            fd_update_dict = self._verify_capture_args(descriptor, self.fd)
-            self.fd.update(fd_update_dict)
+        for stream_num in fd:
+            fd_update_dict = self._verify_capture_args(stream_num, self.fd_objs)
+            self.fd_objs.update(fd_update_dict)
         p = self._popen()
         if p.stdin:
             p.stdin.close()
         p.wait()
         if not set(fd) == set([1,2]):
             self._cleanup_capture(fd[0], p)
-        for descriptor in fd:
-            self.fd[descriptor].seek(0)
-        return Capture(self.fd[1], self.fd[2], p.returncode)
+        for stream_number in fd:
+            self.fd_objs[stream_number].seek(0)
+        return Capture(self.fd_objs[1], self.fd_objs[2], p.returncode)
+    def _process_fd_pair(self, stream_num, fd_descriptor):
+        """for now this just does error checking
+
+        fd_descriptor is what is passed into the function
+        """
+        if not isinstance(stream_num, int):
+            raise TypeError("fd keys must have type int")
+        elif stream_num < 0 or stream_num >= 3:
+             raise NotImplementedError(
+                "redirection {%s: %s} not supported" % (
+                     stream_num, fd_descriptor))
+        if isinstance(fd_descriptor, basestring):
+            new_fd = open(fd_descriptor, 'r' if stream_num == 0 else 'w')
+            return new_fd
+        elif isinstance(fd_descriptor, int):
+            if stream_num == 2 and fd_descriptor == 1:
+                return _ORIG_STDOUT
+                #self.fd[STDERR] = _ORIG_STDOUT
+            elif (fd_descriptor in (0, 1, 2)):
+                raise NotImplementedError(
+                    "redirection {%s: %s} not supported" % (stream_num, fd_descriptor))
+            return fd_descriptor
+        elif isinstance(fd_descriptor, file):
+            return fd_descriptor
+        else:
+            assert 1==2, "fd_descriptors must be a string\
+                          stream number or file"
+
 
 class Cmd(Process):
+
+    def _make_cmd(self, cmd_arg):
+        if isinstance(cmd_arg, basestring):
+            self.cmd = shlex.split(cmd_arg)
+        elif isinstance(cmd_arg, (list, tuple)):
+            self.cmd = cmd_arg
+        else:
+            raise TypeError(
+                "'cmd' must be either of type string, list or tuple")
+
+    """
+    fd_objs is used for processed file descriptor arguments, open file
+    objects, or number flags
+
+    """
+
+
     def __init__(self, cmd, fd={}, e={}, cd=None):
+        self._make_cmd(cmd)
+        self.cd = cd
+        self.e = e
+        self.env = os.environ.copy()
+        self.env.update(e)
+        self.fd_objs = DEFAULT_FD.copy()
+        self.fd_objs.update(fd)
+
+        for stream_num, fd_num in fd.iteritems():
+            self.fd_objs[stream_num] = self._process_fd_pair(stream_num, fd_num)
+
+    def __orig_init__(self, cmd, fd={}, e={}, cd=None):
         """
         Prepare for a fork-exec of 'cmd' with information about changing
         of working directory, extra environment variables and I/O
@@ -174,12 +231,6 @@ class Cmd(Process):
         >>> Cmd(['grep', 'my stuff']) == Cmd('grep "my stuff"')
         True
         """
-        if isinstance(cmd, basestring):
-            self.cmd = shlex.split(cmd)
-        elif isinstance(cmd, (list, tuple)):
-            self.cmd = cmd
-        else:
-            raise TypeError("'cmd' must be either of type string, list or tuple")
         self.cd = cd
         self.e = e
         self.env = os.environ.copy()
@@ -204,7 +255,7 @@ class Cmd(Process):
                     self.fd[STDERR] = _ORIG_STDOUT
                 elif (fd_num in (0, 1, 2)):
                     raise NotImplementedError(
-                      "redirection {%s: %s} not supported" % (stream_num, fd_num))
+                        "redirection {%s: %s} not supported" % (stream_num, fd_num))
             elif stream_num is CLOSE:
                 raise NotImplementedError("closing is not supported")
             elif not hasattr(fd_num, 'fileno'):
@@ -217,7 +268,7 @@ class Cmd(Process):
           self.e, self.cd)
 
     def __eq__(self, other):
-        return (self.cmd == other.cmd) and (self.fd == other.fd) and\
+        return (self.cmd == other.cmd) and (self.fd_objs == other.fd_objs) and\
                (self.env == other.env) and (self.cd == other.cd)
 
     def kill(self):
@@ -271,7 +322,7 @@ class Cmd(Process):
     @property
     def popen_args(self):
         return dict(args=self.cmd, cwd=self.cd, env=self.env,
-          stdin=self.fd[0], stdout=self.fd[1], stderr=self.fd[2])
+          stdin=self.fd_objs[0], stdout=self.fd_objs[1], stderr=self.fd_objs[2])
 
     def _popen(self, **kwargs):
         basic_popen_args = self.popen_args
@@ -308,9 +359,12 @@ class Pipe(Process):
             c.e.update(self.e)
             c.env.update(self.e)
         for c in cmds[:-1]:
-            if _is_fileno(1, c.fd[STDOUT]):
-              c.fd[STDOUT] = PIPE
-        self.fd = {STDIN: cmds[0].fd[STDIN], STDOUT: cmds[-1].fd[STDOUT], 2: 2}
+            if _is_fileno(1, c.fd_objs[STDOUT]):
+              c.fd_objs[STDOUT] = PIPE
+
+        self.fd = {STDIN: cmds[0].fd_objs[STDIN],
+                   STDOUT: cmds[-1].fd_objs[STDOUT],
+                   STDERR: STDERR}
         self.cmds = cmds
 
     def __repr__(self):
@@ -322,14 +376,14 @@ class Pipe(Process):
 
         Return an array of all children's exit status.
         """
-        prev = self.cmds[0].fd[STDIN]
+        prev = self.cmds[0].fd_objs[STDIN]
         for c in self.cmds:
             c.p = c._popen(stdin=prev)
             prev = c.p.stdout
         for c in self.cmds:
             c.p.wait()
         for c in self.cmds[:-1]:
-            if c.fd[STDOUT] == PIPE:
+            if c.fd_objs[STDOUT] == PIPE:
                 c.p.stdout.close()
         return [c.p.returncode for c in self.cmds]
 
@@ -369,7 +423,7 @@ class Pipe(Process):
         if getattr(self, 'p', False):
             raise Exception('you can only spawn a Cmd object once')
 
-        prev = self.cmds[0].fd[STDIN]
+        prev = self.cmds[0].fd_objs[STDIN]
         for c in self.cmds:
             c.p = c._popen(stdin=prev)
             prev = c.p.stdout
@@ -423,31 +477,31 @@ class Pipe(Process):
             self.fd[STDERR] = tempfile.TemporaryFile()
 
         ## start piping
-        prev = self.cmds[0].fd[0]
+        prev = self.cmds[0].fd_objs[0]
         for c in self.cmds[:-1]:
-            if not _is_fileno(STDIN, c.fd[STDIN]):
+            if not _is_fileno(STDIN, c.fd_objs[STDIN]):
                 prev = c.fd[STDIN]
-            if STDERR in fd and _is_fileno(STDERR, c.fd[STDERR]):
-                c.fd[STDERR] = self.fd[STDERR]
+            if STDERR in fd and _is_fileno(STDERR, c.fd_objs[STDERR]):
+                c.fd_objs[STDERR] = self.fd[STDERR]
             c.p = c._popen(stdin=prev)
             prev = c.p.stdout
         ## prepare and fork the last child
         c = self.cmds[-1]
-        if not _is_fileno(STDIN, c.fd[STDIN]):
-            prev = c.fd[STDIN]
+        if not _is_fileno(STDIN, c.fd_objs[STDIN]):
+            prev = c.fd_objs[STDIN]
         if STDOUT in fd:
             ## we made sure that c.fd[1] had not been redirected before
-            c.fd[STDOUT] = tempfile.TemporaryFile()
-            self.fd[STDOUT] = c.fd[STDOUT]
-        if STDERR in fd and _is_fileno(STDERR, c.fd[STDERR]):
-            c.fd[STDERR] = self.fd[STDERR]
+            c.fd_objs[STDOUT] = tempfile.TemporaryFile()
+            self.fd[STDOUT] = c.fd_objs[STDOUT]
+        if STDERR in fd and _is_fileno(STDERR, c.fd_objs[STDERR]):
+            c.fd_objs[STDERR] = self.fd[STDERR]
         c.p = c._popen(stdin=prev)
         ## wait for all children
         for c in self.cmds:
             c.p.wait()
         ## close all unneeded files
         for c in self.cmds[:-1]:
-            if c.fd[STDOUT] == PIPE:
+            if c.fd_objs[STDOUT] == PIPE:
               c.p.stdout.close()
         if not set(fd) == set([1,2]):
             #self._cleanup_capture(fd[0], p)
