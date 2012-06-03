@@ -27,7 +27,7 @@ class LowerCaseTest(ExtProcTest):
         self.assertEquals(run('true'), 0)
         self.assertEquals(run('false'), 1)
 
-    def _test_Sh(self):
+    def test_Sh(self):
         sh_call = Sh('echo bar >&2; echo foo; exit 1')
         out, err, status = sh_call.capture(1, 2)
         self.assertEquals(status, 1)
@@ -161,11 +161,11 @@ class ExtProcCmdTest(ExtProcTest):
             Cmd("/bin/sh -c 'echo bar >&2'").capture(2).stderr.read(), 'bar')
 
         c_obj = Cmd("/bin/sh -c 'echo  foo; echo  bar >&2'")
-        '''
+
         cout, cerr, status = c_obj.capture(1, 2)
         self.assertSh(cout.read(), 'foo')
         self.assertSh(cerr.read(), 'bar')
-        '''
+
 
     def test_spawn_once(self):
         ab = Cmd('yes', {STDOUT: '/dev/null', STDERR: '/dev/null'})

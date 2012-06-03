@@ -101,7 +101,7 @@ class Process(object):
         if not _is_fileno(target, self.fd[target]):
             self.fd[target].close()
 
-    def capture(self, fd):
+    def capture(self, *fd):
         """
         Fork-exec the Cmd and wait for its termination, capturing the
         output and/or error.
@@ -123,14 +123,18 @@ class Process(object):
        'bar'
 
        """
-        fd_update_dict = self._verify_capture_args(fd, self.fd)
-        self.fd.update(fd_update_dict)
+        assert len(fd) > 0
+        for descriptor in fd:
+            fd_update_dict = self._verify_capture_args(descriptor, self.fd)
+            self.fd.update(fd_update_dict)
         p = self._popen()
         if p.stdin:
             p.stdin.close()
         p.wait()
-        self._cleanup_capture(fd, p)
-        self.fd[fd].seek(0)
+        if not set(fd) == set([1,2]):
+            self._cleanup_capture(fd[0], p)
+        for descriptor in fd:
+            self.fd[descriptor].seek(0)
         return Capture(self.fd[1], self.fd[2], p.returncode)
 
     def _orig_capture(self, *fd):
