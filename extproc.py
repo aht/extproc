@@ -400,9 +400,17 @@ class Pipe(Process):
             raise Exception('you can only spawn a Cmd object once')
 
         prev = self.cmds[0].fd_objs[STDIN]
-        for c in self.cmds:
-            c._popen(stdin=prev)
+        for c in self.cmds[:-1]:
+            c._popen(stdin=prev, stdout=PIPE)
             prev = c.running_fd_objs[STDOUT]
+
+        basic_popen_args = self.popen_args
+
+        self.cmds[-1]._popen(
+            stdin=prev,
+            stdout=basic_popen_args['stdout'],
+            stderr=basic_popen_args['stderr'])
+
         JOBS.append(self)
         return self
 
@@ -510,13 +518,13 @@ class Pipe(Process):
         self.cmds[-1]._popen(
             stdin=prev,
             stdout=basic_popen_args['stdout'])
-
+        '''
         for c in self.cmds:
             c.wait()
         for c in self.cmds[:-1]:
             if c.fd_objs[STDOUT] == PIPE:
                 c.running_fd_objs[STDOUT].close()
-
+        '''
 
 if __name__ == '__main__':
     import doctest
