@@ -108,12 +108,21 @@ class ExtProcPipeTest(ExtProcTest):
 
     def _test_pipe_composable(self):
         """we should be able to compose pipes of pipes """
+        Pipe(Pipe(Sh("echo foo")),
+             Pipe(Sh("cat; echo bar")),
+             Pipe(Cmd("cat", {1: os.devnull}))).run(),
 
         self.assertEquals(
-            Pipe(Pipe(Sh("echo foo")),
-                 Pipe(Sh("cat; echo bar")),
-                 Pipe(Cmd("cat", {1: os.devnull}))).run(),
             [0,0,0])
+
+
+        self.assertEquals(len(JOBS), 0)
+        " yes | grep no"
+        yesno = Pipe(Pipe(Cmd('yes')), Pipe(Cmd(['grep', 'no']))).spawn()
+        yesno.cmds[0].kill()
+        self.assertEquals(yesno.cmds[-1].wait(), 1)
+        self.assertEquals(yesno.wait(), 1)
+        self.assertEquals(len(JOBS), 0)
 
         pipe_a = Pipe(Cmd('echo foo'))
         pdb.set_trace()
@@ -145,10 +154,12 @@ class ExtProcPipeTest(ExtProcTest):
         self.assertEquals(len(JOBS), 0)
         " yes | grep no"
         yesno = Pipe(Cmd('yes'), Cmd(['grep', 'no'])).spawn()
-        yesno.cmds[0].p.kill()
-        self.assertEquals(yesno.cmds[-1].p.wait(), 1)
+        yesno.cmds[0].kill()
+        self.assertEquals(yesno.cmds[-1].wait(), 1)
         self.assertEquals(yesno.wait(), 1)
         self.assertEquals(len(JOBS), 0)
+
+
 
     def chriss_recommended_syntax(self):
         '''
@@ -206,7 +217,7 @@ class ExtProcCmdTest(ExtProcTest):
         self.assertRaises(Exception, lambda: ab.spawn())
 
 
-    def test_popen_fd_semantics(self):
+    def _test_popen_fd_semantics(self):
         tf = tempfile.TemporaryFile()
         ab = Cmd('yes', {STDOUT: tf})
         ab._popen()
