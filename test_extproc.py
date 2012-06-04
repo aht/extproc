@@ -3,7 +3,7 @@ import unittest
 import time
 import os
 import tempfile
-from extproc import Sh, Pipe, Cmd, JOBS
+from extproc import Sh, Pipe, Cmd, JOBS, fork_dec2
 from convience import run, sh, pipe, here, cmd
 STDIN, STDOUT, STDERR = 0, 1, 2
 
@@ -103,6 +103,19 @@ class ExtProcPipeTest(ExtProcTest):
     def test_pipe_proc_interface(self):
         ### test Pipe ENV
         pipe_obj = Pipe(Pipe(Cmd("/bin/sh -c 'echo foo'")))
+
+        self.assertSh(pipe_obj.capture(1).stdout.read(), 'foo')
+
+
+    def test_pipe_proc_decorator(self):
+        ### test Pipe ENV
+        @fork_dec2
+        def echoer(stdin_f, stdout_f, stderr_f):
+            for line in stdin_f:
+                stdout_f.write(line + "\n")
+
+        pipe_obj = Pipe(Cmd("/bin/sh -c 'echo foo'"),
+                        echoer)
 
         self.assertSh(pipe_obj.capture(1).stdout.read(), 'foo')
 

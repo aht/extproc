@@ -40,6 +40,7 @@ import os
 import shlex
 import subprocess
 import sys
+import signal
 import tempfile
 import pdb
 
@@ -147,10 +148,10 @@ class Process(object):
         elif isinstance(fd_descriptor, int):
             if stream_num == 2 and fd_descriptor == 1:
                 return _ORIG_STDOUT
-                #self.fd[STDERR] = _ORIG_STDOUT
             elif (fd_descriptor in (0, 1, 2)):
                 raise NotImplementedError(
-                    "redirection {%s: %s} not supported" % (stream_num, fd_descriptor))
+                    "redirection {%s: %s} not supported"
+                     % (stream_num, fd_descriptor))
             return fd_descriptor
         elif isinstance(fd_descriptor, file):
             return fd_descriptor
@@ -518,13 +519,114 @@ class Pipe(Process):
         self.cmds[-1]._popen(
             stdin=prev,
             stdout=basic_popen_args['stdout'])
-        '''
-        for c in self.cmds:
-            c.wait()
-        for c in self.cmds[:-1]:
-            if c.fd_objs[STDOUT] == PIPE:
-                c.running_fd_objs[STDOUT].close()
-        '''
+
+'''
+def fork_decorator(f):
+
+    def inner_func(in_file):
+        out_file_r_num, out_file_w_num = os.pipe()
+        out_file_w = os.fdopen(out_file_w_num, "w")
+        out_file_r = os.fdopen(out_file_r_num)
+
+        pid = os.fork()
+        if pid:
+            print "we are the child"
+            out_file_r.close()
+            f(in_file, out_file_w)
+        else:
+            pl = ProcLike()
+            pl.stdout = out_file_r
+            return pl
+    return inner_func
+
+proc_obj = subprocess.Popen('ls', stdout=-1)
+py_pipe_obj = triple_lines(proc_obj.stdout)
+proc_obj2 = subprocess.Popen(['wc', '-l'], stdin=py_pipe_obj.stdout, stdout=-1)
+print proc_obj2.stdout.read()
+'''
+class PythonProc(Process):
+
+    def __init__(self, inner_func):
+        self.inner_func = inner_func
+        self.e = {}
+        self.env = {}
+
+        self.running_fd_objs = {}
+        self._fork_fd_objs = {}
+        self.fd_objs = {STDIN:sys.stdin,
+                        STDOUT:sys.stdout,
+                        STDERR:sys.stderr}
+
+
+    def _prepare_fds(self, fd_tuples):
+        for stream_num, fd_description in fd_tuples:
+            if isinstance(fd_description, int):
+                self.fd_objs[stream_num] = fd_description
+                if fd_description == PIPE:
+                    out_file_r_num, out_file_w_num = os.pipe()
+                    out_file_w = os.fdopen(out_file_w_num, "w")
+                    out_file_r = os.fdopen(out_file_r_num)
+                elif fd_description in [0, 1, 2]:
+                    out_file_w = os.fdopen(fd_description, "w")
+                    out_file_r = os.fdopen(fd_description)
+                self.running_fd_objs[stream_num] = out_file_r
+                self._fork_fd_objs[stream_num] = out_file_w
+            elif isinstance(fd_description, basestring):
+                new_fd = open(fd_descriptor, 'r' if stream_num == 0 else 'w')
+                self._fork_fd_objs[stream_num] = new_fd
+                self.fd_objs[stream_num] = new_fd
+                #not sure about this one
+                self.running_fd_objs[stream_num] = None
+            elif isinstance(fd_description, file):
+                self._fork_fd_objs[stream_num] = fd_description
+                self.fd_objs[stream_num] = fd_description
+                #not sure about this one
+                self.running_fd_objs[stream_num] = None
+            elif fd_description is None:
+                self._fork_fd_objs[stream_num] = self.fd_objs[stream_num]
+                self.fd_objs[stream_num] = self.fd_objs[stream_num]
+                #not sure about this one
+                self.running_fd_objs[stream_num] = None
+            else:
+                assert 1==2, "fd_descriptors must be a string\
+                             stream number or file"
+
+
+    def _popen(self, stdin=None, stdout=None, stderr=None, **kwargs):
+
+        #the set of file objects visible to the forked process
+
+        fd_tuples = [(STDIN, stdin), (STDOUT, stdout), (STDERR, stderr)]
+        self._prepare_fds(fd_tuples)
+        parent_pid = os.getpid()
+        pid = os.fork()
+        if pid:
+            """ we are the parent """
+            assert os.getpid() == parent_pid, "the pid shouldn't have changed"
+            self.pid = pid
+            for stream_num in [STDOUT, STDERR]:
+                if self.fd_objs[stream_num] == PIPE:
+                    self._fork_fd_objs[stream_num].close()
+            f(in_file, out_file_w)
+        elif pid == 0:
+            """ we are the child """
+            assert not os.getpid() == parent_pid, "the pid should have changed"
+            for stream_num in [STDOUT, STDERR]:
+                if self.fd_objs[stream_num] == PIPE:
+                    self.running_fd_objs[stream_num].close()
+            self.inner_func(
+                self._fork_fd_objs[STDIN],
+                self._fork_fd_objs[STDOUT],
+                self._fork_fd_objs[STDERR])
+
+    def kill(self):
+        return os.kill(self.pid, signal.SIGKILL)
+
+    def wait(self):
+        return os.wait(self.pid, 0)
+
+def fork_dec2(f):
+    return PythonProc(f)
 
 if __name__ == '__main__':
     import doctest
