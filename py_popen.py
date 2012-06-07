@@ -109,13 +109,6 @@ class PyPopen(Popen):
                 # Disable gc to avoid bug where gc -> file_dealloc ->
                 # write to stderr -> hang.  http://bugs.python.org/issue1336
                 gc.disable()
-                #import pdb
-                #ab = p2cread
-
-
-                #child_stdin = os.fdopen(os.open(p2cread, "r"))
-                #pdb.set_trace()
-                #bc = os.open(ab, "r")
                 try:
                     self.pid = os.fork()
                 except:
@@ -165,6 +158,7 @@ class PyPopen(Popen):
                         child_stdin = os.fdopen(0, "r")
                         child_stdout = os.fdopen(1, "w")
                         child_stderr = os.fdopen(2, "w")
+                        #call the child function
                         py_func(child_stdin, child_stdout, child_stderr)
                         child_stdin.close()
                         child_stdout.close()
