@@ -118,7 +118,8 @@ class Process(object):
        'bar'
 
        """
-        assert len(fd) > 0
+        if len(fd) == 0:
+            fd = [1]
         for stream_num in fd:
             fd_update_dict = self._verify_capture_args(stream_num, self.fd_objs)
             self.fd_objs.update(fd_update_dict)
@@ -171,7 +172,6 @@ class Process(object):
         return Pipe(self, cmd_obj)
 
     def __or__(self, cmd_obj):
-        print "or"
         return Pipe(self, cmd_obj)
 
 class Cmd(Process):
@@ -462,7 +462,8 @@ class Pipe(Process):
         Don't forget to close the file objects!
 
         """
-        assert len(fd) > 0
+        if len(fd) == 0:
+            fd = [1]
         for descriptor in fd:
             fd_update_dict = self._verify_capture_args(descriptor, self.fd_objs)
             self.fd_objs.update(fd_update_dict)

@@ -245,9 +245,15 @@ class ExtPipeSyntaxtTest(ExtProcTest):
             Cmd("echo foo").pipe_to(Cmd("wc -c")).capture(1).stdout.read(), '4')
 
 
-
+        #or syntax, closer to bash pipes
         self.assertSh(
             (Cmd("echo foo") | Cmd("wc -c")).capture(1).stdout.read(), '4')
+
+    def test_capture_sane(self):
+        self.assertSh(
+            Pipe(
+                Cmd("echo foo"),
+                Cmd("wc -c")).capture().stdout.read(), '4')
 
 
 
