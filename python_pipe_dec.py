@@ -47,7 +47,7 @@ def triple_lines(in_file, out_file):
 class PyForkable(object):
     """ this is the object that wraps a python function that is to be
     used in a Pipe sequence, it implements the interface of command
-    
+
     Ideally
     """
     def __init__(self, f):
@@ -55,8 +55,7 @@ class PyForkable(object):
         self.fd = {}
 
     def _popen(self, stdin=0, stdout=1, stderr=2):
-        
+
 
         def make_forkable(f):
             """ this is the actual decorator that is wrapped around a function  """
-

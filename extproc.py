@@ -42,6 +42,7 @@ import subprocess
 import sys
 import signal
 import tempfile
+import py_popen
 import pdb
 
 STDIN, STDOUT, STDERR = 0, 1, 2
@@ -299,7 +300,9 @@ class Cmd(Process):
     def _popen(self, **kwargs):
         basic_popen_args = self.popen_args
         basic_popen_args.update(kwargs)
-        self.p = decorate_popen(subprocess.Popen(**basic_popen_args))
+        #pdb.set_trace()
+        ab = subprocess.Popen(**basic_popen_args)
+        self.p = decorate_popen(ab)
         return self.p
 
 def decorate_popen(popen_obj):
@@ -625,8 +628,39 @@ class PythonProc(Process):
     def wait(self):
         return os.wait(self.pid, 0)
 
+class PythonProc2(Cmd):
+    def __init__(self, py_func, fd={}, e={}, cd=None):
+        """
+        """
+        self.py_func = py_func
+        self.cd = cd
+        self.e = e
+        self.env = os.environ.copy()
+        self.env.update(e)
+        self.fd_objs = DEFAULT_FD.copy()
+        self.fd_objs.update(fd)
+
+        for stream_num, fd_num in fd.iteritems():
+            self.fd_objs[stream_num] = self._process_fd_pair(stream_num, fd_num)
+
+    @property
+    def popen_args(self):
+        return dict(
+            py_func=self.py_func, cwd=self.cd, env=self.env,
+            stdin=self.fd_objs[0],
+            stdout=self.fd_objs[1],
+            stderr=self.fd_objs[2])
+
+    def _popen(self, **kwargs):
+        basic_popen_args = self.popen_args
+        basic_popen_args.update(kwargs)
+        #pdb.set_trace()
+        ab = py_popen.PyPopen(**basic_popen_args)
+        self.p = decorate_popen(ab)
+        return self.p
+
 def fork_dec2(f):
-    return PythonProc(f)
+    return PythonProc2(f)
 
 if __name__ == '__main__':
     import doctest
