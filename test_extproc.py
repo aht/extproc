@@ -113,9 +113,6 @@ class ExtProcPipeTest(ExtProcTest):
         def echoer(stdin_f, stdout_f, stderr_f):
             for line in stdin_f:
                 stdout_f.write(line + "\n")
-            stdin_f.close()
-            stdout_f.close()
-            stderr_f.close()
         pipe_obj = Pipe(Cmd("/bin/sh -c 'echo foo'"),
                         echoer)
 

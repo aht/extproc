@@ -162,18 +162,14 @@ class PyPopen(Popen):
                         if preexec_fn:
                             preexec_fn()
 
-                        #child_stdin = os.fdopen(os.open(p2cread, "r"))
                         child_stdin = os.fdopen(0, "r")
-                        #child_stdin = p2cread
-                        #child_stdout = os.open(c2pwrite, "w")
                         child_stdout = os.fdopen(1, "w")
-                        #child_stdout = c2pwrite
-                        #child_stderr = os.open(errwrite, "w")
                         child_stderr = os.fdopen(2, "w")
-                        #py_func(p2cread, c2pwrite, errwrite)
-                        print "here in child"
-                        print child_stdin
                         py_func(child_stdin, child_stdout, child_stderr)
+                        child_stdin.close()
+                        child_stdout.close()
+                        child_stderr.close()
+
                     except:
                         exc_type, exc_value, tb = sys.exc_info()
                         # Save the traceback and attach it to the exception object
@@ -188,13 +184,7 @@ class PyPopen(Popen):
                     os._exit(255)
 
                 # Parent
-                else:
-                    import pdb
-                    print "here in parent"
-                    #pdb.set_trace()
-                    print "here in parent"
                 if gc_was_enabled:
-
                     gc.enable()
             finally:
                 # be sure the FD is closed no matter what
@@ -212,8 +202,8 @@ class PyPopen(Popen):
             data = _eintr_retry_call(os.read, errpipe_read, 1048576)
         finally:
             # be sure the FD is closed no matter what
-            pass
-            #os.close(errpipe_read)
+            #pass
+            os.close(errpipe_read)
 
         if data != "":
             print data
