@@ -167,6 +167,12 @@ class Process(object):
             stdout=self.fd_objs[1],
             stderr=self.fd_objs[2])
 
+    def pipe_to(self, cmd_obj):
+        return Pipe(self, cmd_obj)
+
+    def __or__(self, cmd_obj):
+        print "or"
+        return Pipe(self, cmd_obj)
 
 class Cmd(Process):
 

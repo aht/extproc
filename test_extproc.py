@@ -235,5 +235,21 @@ class ExtProcCmdTest(ExtProcTest):
         ab._popen()
         self.assertTrue(tf is ab.fd_objs[STDOUT])
 
+class ExtPipeSyntaxtTest(ExtProcTest):
+    def test_pipeto(self):
+        self.assertSh(
+            Pipe(
+                Cmd("echo foo"),
+                Cmd("wc -c")).capture(1).stdout.read(), '4')
+        self.assertSh(
+            Cmd("echo foo").pipe_to(Cmd("wc -c")).capture(1).stdout.read(), '4')
+
+
+
+        self.assertSh(
+            (Cmd("echo foo") | Cmd("wc -c")).capture(1).stdout.read(), '4')
+
+
+
 if __name__ == '__main__':
     unittest.main()
