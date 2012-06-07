@@ -3,7 +3,7 @@ import unittest
 import time
 import os
 import tempfile
-from extproc import Sh, Pipe, Cmd, JOBS, fork_dec2
+from extproc import Sh, Pipe, Cmd, JOBS, fork_dec
 from convience import run, sh, pipe, here, cmd
 STDIN, STDOUT, STDERR = 0, 1, 2
 
@@ -109,7 +109,7 @@ class ExtProcPipeTest(ExtProcTest):
 
     def test_pipe_proc_decorator(self):
         ### test Pipe ENV
-        @fork_dec2
+        @fork_dec
         def echoer(stdin_f, stdout_f, stderr_f):
             for line in stdin_f:
                 stdout_f.write(line + "\n")
