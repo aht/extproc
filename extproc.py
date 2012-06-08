@@ -259,7 +259,7 @@ class Cmd(Process):
                 if job is self:
                     JOBS.remove(self)
 
-    def wait(self):
+    def wait(self, func=None):
         if not getattr(self, 'p', False):
             raise Exception('No process to kill')
         try:
@@ -268,7 +268,8 @@ class Cmd(Process):
             for job in JOBS:
                 if job is self:
                     JOBS.remove(self)
-
+            if func:
+                func()
 
 
     def run(self):
@@ -433,14 +434,15 @@ class Pipe(Process):
                 if job is self:
                     JOBS.remove(self)
 
-    def wait(self):
+    def wait(self, func=None):
         try:
             return self.cmds[-1].wait()
         finally:
             for job in JOBS:
                 if job is self:
                     JOBS.remove(self)
-
+            if func:
+                func()
 
     def capture(self, *fd):
         """
@@ -521,7 +523,6 @@ class Pipe(Process):
         basic_popen_args.update(kwargs)
 
         prev = basic_popen_args['stdin']
-        #pdb.set_trace()
         for c in self.cmds[:-1]:
             c._popen(stdin=prev, stdout=PIPE)
             prev = c.running_fd_objs[STDOUT]
@@ -556,7 +557,6 @@ class PythonProc(Cmd):
     def _popen(self, **kwargs):
         basic_popen_args = self.popen_args
         basic_popen_args.update(kwargs)
-        #pdb.set_trace()
         ab = py_popen.PyPopen(**basic_popen_args)
         self.p = decorate_popen(ab)
         return self.p

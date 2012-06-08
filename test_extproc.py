@@ -255,6 +255,22 @@ class ExtPipeSyntaxtTest(ExtProcTest):
                 Cmd("echo foo"),
                 Cmd("wc -c")).capture().stdout.read(), '4')
 
+    def test_wait_callback(self):
+        orig_val = [0]
+        def val_mod():
+            orig_val[0] = 8
+        c = Cmd("sleep 1")
+        c.spawn()
+        self.assertEquals(orig_val, [0])
+        c.wait(val_mod)
+        self.assertEquals(orig_val, [8])
+
+        orig_val = [0]
+        p = Cmd("echo foo").pipe_to(Cmd("wc -c"))
+        p.spawn()
+        self.assertEquals(orig_val, [0])
+        p.wait(val_mod)
+        self.assertEquals(orig_val, [8])
 
 
 if __name__ == '__main__':
