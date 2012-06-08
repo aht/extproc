@@ -115,8 +115,15 @@ class ExtProcPipeTest(ExtProcTest):
                 stdout_f.write(line + "\n")
         pipe_obj = Pipe(Cmd("/bin/sh -c 'echo foo'"),
                         echoer)
-
         self.assertSh(pipe_obj.capture(1).stdout.read(), 'foo')
+
+        @fork_dec
+        def echoer(stdin_f, stdout_f, stderr_f):
+            for line in stdin_f:
+                stdout_f.write(line+line + "\n")
+        pipe_obj = Pipe(Cmd("/bin/sh -c 'echo foo'"),
+                        echoer)
+        self.assertSh(pipe_obj.capture(1).stdout.read(), 'foofoo')
 
     def _test_pipe_composable(self):
         """we should be able to compose pipes of pipes """
@@ -130,7 +137,9 @@ class ExtProcPipeTest(ExtProcTest):
 
         self.assertEquals(len(JOBS), 0)
         " yes | grep no"
-        yesno = Pipe(Pipe(Cmd('yes')), Pipe(Cmd(['grep', 'no']))).spawn()
+        yesno = Pipe(
+            Pipe(Cmd('yes')),
+            Pipe(Cmd(['grep', 'no']))).spawn()
         yesno.cmds[0].kill()
         self.assertEquals(yesno.cmds[-1].wait(), 1)
         self.assertEquals(yesno.wait(), 1)
