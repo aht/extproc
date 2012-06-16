@@ -238,12 +238,19 @@ class Cmd(Process):
             self.env.update(self.e)
         else:
             self.e = {}
-        self.stdin_data = stdin_data
-        if self.stdin_data and STDIN in fd:
-            raise InvalidArgsException(
-                "Can't specify a file for STDIN and stdin_data ")
+
         self.fd_objs = DEFAULT_FD.copy()
         self.fd_objs.update(fd)
+        self.stdin_data = stdin_data
+        if self.stdin_data:
+            if STDIN in fd:
+                raise InvalidArgsException(
+                    "Can't specify a file for STDIN and stdin_data ")
+            #tf_file_path = tempfile.mktemp()
+            #self.tf = open(tf_file_path, "w")
+            #pdb.set_trace()
+            #self.tf.write(stdin_data)
+            #self.fd_objs.update({STDIN:open(tf_file_path)})
 
         for stream_num, fd_num in fd.iteritems():
             self.fd_objs[stream_num] = self._process_fd_pair(stream_num, fd_num)
@@ -577,6 +584,13 @@ class PythonProc(Cmd):
 
 def fork_dec(f):
     return PythonProc(f)
+
+def make_echoer(data_string):
+    @fork_dec
+    def echo_f(stdin, stdout, stderr):
+        stdout.write(data_string)
+    return echo_f
+
 
 if __name__ == '__main__':
     import doctest

@@ -3,7 +3,8 @@ import time
 import os
 import tempfile
 from test_extproc.test_lib import ExtProcTest, STDIN, STDOUT, STDERR
-from extproc import Sh, Pipe, Cmd, JOBS, fork_dec
+from extproc import (
+    Sh, Pipe, Cmd, JOBS, fork_dec, InvalidArgsException, make_echoer)
 
 class ExtProcPipeTest(ExtProcTest):
 
@@ -33,8 +34,8 @@ class ExtProcPipeTest(ExtProcTest):
         def echoer(stdin_f, stdout_f, stderr_f):
             for line in stdin_f:
                 stdout_f.write(line+line + "\n")
-        pipe_obj = Pipe(Cmd("/bin/sh -c 'echo foo'"),
-                        echoer)
+
+        pipe_obj = Pipe(Cmd("/bin/sh -c 'echo foo'"), echoer)
         self.assertSh(pipe_obj.capture(1).stdout.read(), 'foofoo')
 
     def _test_pipe_composable(self):
@@ -66,13 +67,9 @@ class ExtProcPipeTest(ExtProcTest):
     def _asfd(self):
         pipe_a=Pipe(Cmd('ls /usr/local/Cellar'))
 
-        #
-
-
         pipe_b=Pipe(Cmd('wc -l'))
         outer_pipe = Pipe(pipe_a, pipe_b)
         self.assertSh(outer_pipe.capture(1).stdout.read(), '10')
-
 
 
     def test_run(self):
@@ -142,10 +139,23 @@ class ExtProcCmdTest(ExtProcTest):
         cout, cerr, status = c_obj.capture(1, 2)
         self.assertSh(cout.read(), 'foo')
         self.assertSh(cerr.read(), 'bar')
+
     def test_stdin_data(self):
-        def raiseBadArgs():
-            cmd_ = Cmd("sed s/i/I/g", stdin_data="Hi", fd={STDIN:"/foo"})
-        #self.assertRaises(
+        def raiseInvalidArgs():
+            cmd_ = Cmd("sed s/i/I/g", fd={STDIN:"/foo"}, stdin_data="Hi")
+        self.assertRaises(InvalidArgsException, raiseInvalidArgs)
+        #cmd_ = Cmd("sed s/i/I/g", stdin_data="Hi")
+
+        #self.assertSh(
+        #    cmd_.capture(1).stdout.read(),
+        #    "HI")
+        #it is easier to express stdin_data in terms of a Pipe than in
+        #    terms of a modification to Cmd itself
+        self.assertSh(Pipe(
+                make_echoer("Hi"),
+                Cmd("sed s/i/I/g")).capture(1).stdout.read(),
+            "HI")
+
         #self.assertEqual(r.std_out.rstrip(), "HI")
         #self.assertEqual(r.status_code, 0)
 
