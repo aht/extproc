@@ -2,7 +2,6 @@ import pdb
 import time
 import os
 import tempfile
-
 from test_extproc.test_lib import ExtProcTest, STDIN, STDOUT, STDERR
 from extproc import Sh, Pipe, Cmd, JOBS, fork_dec
 

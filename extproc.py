@@ -66,6 +66,9 @@ def _name_or_self(f):
 class FakeP(object):
     pass
 
+class InvalidArgsException(Exception):
+    pass
+
 class Process(object):
 
     def _check_redirect_target(self, fd_target, fd_dict):
@@ -183,14 +186,14 @@ class Cmd(Process):
             self.cmd = cmd_arg
         else:
             raise TypeError(
-                "'cmd' must be either of type string, list or tuple")
+                "'cmd' argument must be either of type string, list or tuple")
 
     """
     fd_objs is used for processed file descriptor arguments, open file
     objects, or number flags
 
     """
-    def __init__(self, cmd, fd={}, e={}, cd=None):
+    def __init__(self, cmd, fd={}, e={}, cd=None, stdin_data=None):
         """
         Prepare for a fork-exec of 'cmd' with information about changing
         of working directory, extra environment variables and I/O
@@ -235,6 +238,10 @@ class Cmd(Process):
             self.env.update(self.e)
         else:
             self.e = {}
+        self.stdin_data = stdin_data
+        if self.stdin_data and STDIN in fd:
+            raise InvalidArgsException(
+                "Can't specify a file for STDIN and stdin_data ")
         self.fd_objs = DEFAULT_FD.copy()
         self.fd_objs.update(fd)
 
