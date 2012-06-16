@@ -175,7 +175,10 @@ class PyPopen(Popen):
 
                     # This exitcode won't be reported to applications, so it
                     # really doesn't matter what we return.
-                    os._exit(255)
+                    #os._exit(0)
+                    # in the case of extproc, the exit status does
+                    # matter, we want the exit status to be 0
+                    os._exit(0)
 
                 # Parent
                 if gc_was_enabled:
