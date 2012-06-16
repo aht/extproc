@@ -229,9 +229,12 @@ class Cmd(Process):
 
         self._make_cmd(cmd)
         self.cd = cd
-        self.e = e
         self.env = os.environ.copy()
-        self.env.update(e)
+        if e:
+            self.e = e
+            self.env.update(self.e)
+        else:
+            self.e = {}
         self.fd_objs = DEFAULT_FD.copy()
         self.fd_objs.update(fd)
 
@@ -342,9 +345,13 @@ class Pipe(Process):
         :parameter e: extra environment variables to be exported to all
                       sub-commands, must be a keyword argument
         """
-        self.e = kwargs.get('e', {})
         self.env = os.environ.copy()
-        self.env.update(self.e)
+        e = kwargs.get('e', {})
+        if e:
+            self.e = e
+            self.env.update(self.e)
+        else:
+            self.e = {}
         for c in cmds:
             c.e.update(self.e)
             c.env.update(self.e)
