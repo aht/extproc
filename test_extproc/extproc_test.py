@@ -134,6 +134,22 @@ class ExtProcPipeTest(ExtProcTest):
         self.assertSh(
             cmd.capture(1, timeout=1).stdout.read(), '')
 
+    def test_capture_timeout2(self):
+        """ make sure that a timeout that is longer than a pipeline
+        should take to execute doesn't alter the results of that
+        pipeline
+        """
+        p = Pipe(Cmd('yes'), Cmd('head -n 10'))
+        self.assertSh(
+            p.capture(1).stdout.read(),
+            'y\ny\ny\ny\ny\ny\ny\ny\ny\ny\n')
+
+        p = Pipe(Cmd('yes'), Cmd('head -n 10'))
+        self.assertSh(
+            p.capture(1, timeout=1).stdout.read(),
+            'y\ny\ny\ny\ny\ny\ny\ny\ny\ny\n')
+
+
 class ExtProcCmdTest(ExtProcTest):
     def test_CMD(self):
         self.assertEquals(Cmd(['grep', 'my stuff']), Cmd('grep "my stuff"'))
