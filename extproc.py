@@ -42,6 +42,8 @@ import subprocess
 import sys
 import signal
 import tempfile
+import threading
+import time
 import py_popen
 import pdb
 
@@ -99,7 +101,7 @@ class Process(object):
         if not _is_fileno(target, target_obj) and isinstance(target_obj, file):
             fd_dict[target].close()
 
-    def capture(self, *fd):
+    def capture(self, *fd, **kwargs):
         """
         Fork-exec the Cmd and wait for its termination, capturing the
         output and/or error.
@@ -126,7 +128,22 @@ class Process(object):
         for stream_num in fd:
             fd_update_dict = self._verify_capture_args(stream_num, self.fd_objs)
             self.fd_objs.update(fd_update_dict)
-        p = self._popen()
+
+        proc_objs = [0]
+        def runit():
+            proc_objs[0] = self._popen()
+        if kwargs.get('timeout'):
+            timeout =  kwargs.get('timeout')
+            proc_thread = threading.Thread(target=runit)
+            proc_thread.start()
+            proc_thread.join(timeout)
+            kill_timeout = kwargs.get('kill_timeout', 0)
+            time.sleep(kill_timeout)
+            self.kill()
+        else:
+            runit()
+        p = proc_objs[0]
+
         if p.fd_objs[STDIN]:
             p.fd_objs[STDIN].close()
         p.wait()
@@ -347,8 +364,8 @@ class Sh(Cmd):
 
   def __repr__(self):
     return "Sh(%r, fd=%r, e=%r, cd=%r)" % (self.cmd[2], dict(
-                        (k, _name_or_self(v)) for k, v in self.fd.iteritems()
-                ), self.e, self.cd)
+        (k, _name_or_self(v)) for k, v in self.fd_objs.iteritems()
+        ), self.e, self.cd)
 
 
 class Pipe(Process):
@@ -465,7 +482,7 @@ class Pipe(Process):
             if func:
                 func()
 
-    def capture(self, *fd):
+    def capture(self, *fd, **kwargs):
         """
         Fork-exec the Cmd and wait for its termination, capturing the
         output and/or error.
@@ -494,29 +511,47 @@ class Pipe(Process):
         if STDERR in fd:
             self.fd_objs[STDERR] = tempfile.TemporaryFile()
 
-        ## start piping
-        prev = self.cmds[0].fd_objs[0]
-        for c in self.cmds[:-1]:
+        def runit():
+            ## start piping
+
+            prev = self.cmds[0].fd_objs[0]
+
+            for c in self.cmds[:-1]:
+                if not _is_fileno(STDIN, c.fd_objs[STDIN]):
+                    prev = c.fd_objs[STDIN]
+                if STDERR in fd and _is_fileno(STDERR, c.fd_objs[STDERR]):
+                    c.fd_objs[STDERR] = self.fd_objs[STDERR]
+                c._popen(stdin=prev)
+                prev = c.running_fd_objs[STDOUT]
+            ## prepare and fork the last child
+            c = self.cmds[-1]
             if not _is_fileno(STDIN, c.fd_objs[STDIN]):
                 prev = c.fd_objs[STDIN]
+            if STDOUT in fd:
+                ## we made sure that c.fd[STDOUT] had not been redirected before
+                c.fd_objs[STDOUT] = tempfile.TemporaryFile()
+                self.fd_objs[STDOUT] = c.fd_objs[STDOUT]
             if STDERR in fd and _is_fileno(STDERR, c.fd_objs[STDERR]):
                 c.fd_objs[STDERR] = self.fd_objs[STDERR]
             c._popen(stdin=prev)
-            prev = c.running_fd_objs[STDOUT]
-        ## prepare and fork the last child
-        c = self.cmds[-1]
-        if not _is_fileno(STDIN, c.fd_objs[STDIN]):
-            prev = c.fd_objs[STDIN]
-        if STDOUT in fd:
-            ## we made sure that c.fd[STDOUT] had not been redirected before
-            c.fd_objs[STDOUT] = tempfile.TemporaryFile()
-            self.fd_objs[STDOUT] = c.fd_objs[STDOUT]
-        if STDERR in fd and _is_fileno(STDERR, c.fd_objs[STDERR]):
-            c.fd_objs[STDERR] = self.fd_objs[STDERR]
-        c._popen(stdin=prev)
-        ## wait for all children
-        for c in self.cmds:
-            c.wait()
+
+        if kwargs.get('timeout'):
+            timeout =  kwargs.get('timeout')
+            proc_thread = threading.Thread(target=runit)
+            proc_thread.start()
+            proc_thread.join(timeout)
+            kill_timeout = kwargs.get('kill_timeout', 0)
+            time.sleep(kill_timeout)
+            self.kill()
+        else:
+            runit()
+
+
+        #we only need to wait on the last in the pipeline, the rest
+        #will die off, and since the point of capture is to grab the
+        #output, once the last cmd is dead, there can be no more output
+        self.cmds[-1].wait()
+
         ## close all unneeded files
         for c in self.cmds[:-1]:
             if c.fd_objs[STDOUT] == PIPE:
@@ -531,8 +566,7 @@ class Pipe(Process):
         return Capture(
              self.fd_objs[STDOUT],
             self.fd_objs[STDERR],
-
-            self.returncode)
+            self.cmds[-1].returncode)
 
     def _popen(self, **kwargs):
         """

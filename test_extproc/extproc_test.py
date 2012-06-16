@@ -122,6 +122,18 @@ class ExtProcPipeTest(ExtProcTest):
         self.assertSh(out.read(), 'foo')
         self.assertSh(err.read(), 'bar')
 
+    def test_capture_timeout(self):
+        ## make sure that capture doesn't return instantly
+        cmd = Pipe(Cmd("/bin/sh -c 'sleep 1 && echo foo'"))
+        self.assertSh(
+            cmd.capture(1).stdout.read(), 'foo')
+
+        ## make sure that timeout is honored, this process should take
+        ## too long and be terminated
+        cmd = Pipe(Cmd("/bin/sh -c 'sleep 5 && echo foo'"))
+        self.assertSh(
+            cmd.capture(1, timeout=1).stdout.read(), '')
+
 class ExtProcCmdTest(ExtProcTest):
     def test_CMD(self):
         self.assertEquals(Cmd(['grep', 'my stuff']), Cmd('grep "my stuff"'))
@@ -139,6 +151,19 @@ class ExtProcCmdTest(ExtProcTest):
         cout, cerr, status = c_obj.capture(1, 2)
         self.assertSh(cout.read(), 'foo')
         self.assertSh(cerr.read(), 'bar')
+
+    def test_capture_timeout(self):
+        ## make sure that capture doesn't return instantly
+        cmd = Cmd("/bin/sh -c 'sleep 1 && echo foo'")
+        self.assertSh(
+            cmd.capture(1).stdout.read(), 'foo')
+
+        ## make sure that timeout is honored, this process should take
+        ## too long and be terminated
+        cmd = Cmd("/bin/sh -c 'sleep 5 && echo foo'")
+        self.assertSh(
+            cmd.capture(1, timeout=1).stdout.read(), '')
+
 
     def test_stdin_data(self):
         def raiseInvalidArgs():
