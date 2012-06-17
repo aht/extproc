@@ -26,16 +26,16 @@ class ExtProcPipeTest(ExtProcTest):
         def echoer(stdin_f, stdout_f, stderr_f):
             for line in stdin_f:
                 stdout_f.write(line + "\n")
-        pipe_obj = Pipe(Cmd("/bin/sh -c 'echo foo'"),
+        pipe_obj = Pipe(Cmd("echo foo"),
                         echoer)
         self.assertSh(pipe_obj.capture(1).stdout.read(), 'foo')
 
         @fork_dec
-        def echoer(stdin_f, stdout_f, stderr_f):
+        def doubler(stdin_f, stdout_f, stderr_f):
             for line in stdin_f:
                 stdout_f.write(line+line + "\n")
 
-        pipe_obj = Pipe(Cmd("/bin/sh -c 'echo foo'"), echoer)
+        pipe_obj = Pipe(Cmd("echo foo"), doubler)
         self.assertSh(pipe_obj.capture(1).stdout.read(), 'foofoo')
 
     def _test_pipe_composable(self):
