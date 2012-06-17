@@ -89,6 +89,11 @@ class ExtProcPipeTest(ExtProcTest):
         self.assertEquals(yesno.wait(), 1)
         self.assertEquals(len(JOBS), 0)
 
+    def test_spawn_returncode(self):
+        sleeper = Pipe(Cmd('sleep .3')).spawn()
+        self.assertEquals(sleeper.returncode, None)
+        time.sleep(.8)
+        self.assertEquals(sleeper.returncode, 0)
 
 
     def chriss_recommended_syntax(self):

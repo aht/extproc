@@ -275,7 +275,8 @@ class Cmd(Process):
 
     def __repr__(self):
         return "Cmd(%r, fd=%r, e=%r, cd=%r)" % (
-          self.cmd, dict((k, _name_or_self(v)) for k, v in self.fd.iteritems()),
+          self.cmd,
+          dict((k, _name_or_self(v)) for k, v in self.fd_objs.iteritems()),
           self.e, self.cd)
 
     def __eq__(self, other):
@@ -337,12 +338,12 @@ class Cmd(Process):
 
     @property
     def returncode(self):
+        self.p.poll()
         return self.p.returncode
 
     def _popen(self, **kwargs):
         basic_popen_args = self.popen_args
         basic_popen_args.update(kwargs)
-        #pdb.set_trace()
         ab = subprocess.Popen(**basic_popen_args)
         self.p = decorate_popen(ab)
         return self.p
@@ -369,6 +370,30 @@ class Sh(Cmd):
         ), self.e, self.cd)
 
 
+class LiveCapture(object):
+    def __init__(self, pipe_obj):
+        self.pipe_obj = pipe_obj
+
+    @property
+    def stdout(self):
+
+        if self.returncode is not None:
+            self.pipe_obj.fd_objs[STDOUT].seek(0)
+            return self.pipe_obj.fd_objs[STDOUT].read()
+
+    @property
+    def stderr(self):
+        if self.returncode is not None:
+            self.pipe_obj.fd_objs[STDERR].seek(0)
+            return self.pipe_obj.fd_objs[STDERR].read()
+
+    @property
+    def returncode(self):
+        return self.pipe_obj.returncode
+
+
+
+
 class Pipe(Process):
     def __init__(self, *cmds, **kwargs):
         """
@@ -392,8 +417,8 @@ class Pipe(Process):
               c.fd_objs[STDOUT] = PIPE
 
         self.fd_objs = {STDIN: cmds[0].fd_objs[STDIN],
-                   STDOUT: cmds[-1].fd_objs[STDOUT],
-                   STDERR:  cmds[-1].fd_objs[STDERR]}
+                        STDOUT: cmds[-1].fd_objs[STDOUT],
+                        STDERR:  cmds[-1].fd_objs[STDERR]}
 
         self.cmds = cmds
         self.cmd = "PIPE, not a real command"
@@ -483,25 +508,9 @@ class Pipe(Process):
             if func:
                 func()
 
-    def capture(self, *fd, **kwargs):
+    def _capture_core(self, *fd, **kwargs):
         """
-        Fork-exec the Cmd and wait for its termination, capturing the
-        output and/or error.
-
-        :param fd: a list of file descriptors to capture, should be a
-        subset of [1, 2] where
-
-          * 1 represents what the children would have written to the
-            parent's stdout
-          * 2 represents what the children would have written to the
-            parent's stderr
-
-        Return a namedtuple (stdout, stderr, exit_status) where stdout and
-        stderr are captured file objects or None and exit_status is a list
-        of all children's exit statuses.
-
-        Don't forget to close the file objects!
-
+        like capture except this returns immediately.
         """
         if len(fd) == 0:
             fd = [1]
@@ -535,40 +544,61 @@ class Pipe(Process):
             if STDERR in fd and _is_fileno(STDERR, c.fd_objs[STDERR]):
                 c.fd_objs[STDERR] = self.fd_objs[STDERR]
             c._popen(stdin=prev)
-
-        if kwargs.get('timeout'):
-            timeout =  kwargs.get('timeout')
-            proc_thread = threading.Thread(target=runit)
-            proc_thread.start()
-            proc_thread.join(timeout)
-            kill_timeout = kwargs.get('kill_timeout', 0)
-            time.sleep(kill_timeout)
-            self.kill()
-        else:
-            runit()
-
-
-        #we only need to wait on the last in the pipeline, the rest
-        #will die off, and since the point of capture is to grab the
-        #output, once the last cmd is dead, there can be no more output
-        self.cmds[-1].wait()
-
-        ## close all unneeded files
-        for c in self.cmds[:-1]:
-            if c.fd_objs[STDOUT] == PIPE:
-              c.running_fd_objs[STDOUT].close()
-        if not set(fd) == set([1,2]):
-            #self._cleanup_capture(fd[0], p)
-            self._cleanup_capture_dict(fd[0], self.fd_objs)
-        for descriptor in fd:
+        def cleanup():
+            ## close all unneeded files
+            for c in self.cmds[:-1]:
+                if c.fd_objs[STDOUT] == PIPE:
+                    c.running_fd_objs[STDOUT].close()
+            if not set(fd) == set([1,2]):
+                self._cleanup_capture_dict(fd[0], self.fd_objs)
+            for descriptor in fd:
             #self.running_fd_objs[descriptor].seek(0)
-            self.fd_objs[descriptor].seek(0)
+                self.fd_objs[descriptor].seek(0)
 
-        self.kill()
-        return Capture(
-            self.fd_objs[STDOUT],
-            self.fd_objs[STDERR],
-            self.cmds[-1].returncode)
+        return runit, cleanup
+
+    def capture(self, *fd, **kwargs):
+       runit, cleanup  = self._capture_core(*fd, **kwargs)
+
+       if kwargs.get('timeout'):
+           timeout =  kwargs.get('timeout')
+           proc_thread = threading.Thread(target=runit)
+           proc_thread.start()
+           proc_thread.join(timeout)
+           kill_timeout = kwargs.get('kill_timeout', 0)
+           time.sleep(kill_timeout)
+           self.kill()
+       else:
+           runit()
+
+       #we only need to wait on the last in the pipeline, the rest
+       #will die off, and since the point of capture is to grab the
+       #output, once the last cmd is dead, there can be no more output
+       self.cmds[-1].wait()
+        ## close all unneeded files
+       cleanup()
+       self.kill()
+       return Capture(
+           self.fd_objs[STDOUT],
+           self.fd_objs[STDERR],
+           self.cmds[-1].returncode)
+
+    def capture_spawn(self, *fd, **kwargs):
+       runit, fd = self._capture_core(*fd, **kwargs)
+
+       if kwargs.get('timeout'):
+           timeout =  kwargs.get('timeout')
+           proc_thread = threading.Thread(target=runit)
+           proc_thread.start()
+           proc_thread.join(timeout)
+           kill_timeout = kwargs.get('kill_timeout', 0)
+           time.sleep(kill_timeout)
+           self.kill()
+       else:
+           runit()
+
+       JOBS.append(self)
+       return LiveCapture(self)
 
     def _popen(self, **kwargs):
         """
