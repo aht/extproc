@@ -151,6 +151,7 @@ class Process(object):
              self._cleanup_capture_dict(fd[0], p.fd_objs)
         for stream_number in fd:
             self.fd_objs[stream_number].seek(0)
+        self.kill()
         return Capture(self.fd_objs[1], self.fd_objs[2], p.returncode)
 
     def _process_fd_pair(self, stream_num, fd_descriptor):
@@ -563,8 +564,9 @@ class Pipe(Process):
             #self.running_fd_objs[descriptor].seek(0)
             self.fd_objs[descriptor].seek(0)
 
+        self.kill()
         return Capture(
-             self.fd_objs[STDOUT],
+            self.fd_objs[STDOUT],
             self.fd_objs[STDERR],
             self.cmds[-1].returncode)
 
