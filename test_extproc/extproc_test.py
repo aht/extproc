@@ -21,7 +21,6 @@ class ExtProcPipeTest(ExtProcTest):
 
 
     def test_pipe_proc_decorator(self):
-        ### test Pipe ENV
         @fork_dec
         def echoer(stdin_f, stdout_f, stderr_f):
             for line in stdin_f:
